@@ -307,3 +307,106 @@ input { font-family:inherit; }
   .editor { width:100vw; }
   .editor-body { padding:20px 18px 80px; }
 }
+
+/* ============ 추가: 캘린더 · 읽기 페이지 · 주목 종목 ============ */
+
+/* 아이콘 버튼 */
+.icon-btn { background:var(--surface); border:1px solid var(--line2); width:34px; height:34px; border-radius:9px; color:var(--ink2); font-size:14px; display:grid; place-items:center; transition:background .15s,border-color .15s; }
+.icon-btn:hover { background:var(--surface2); border-color:var(--muted); }
+
+/* 미니 캘린더 */
+.calendar { padding:12px 6px 14px; margin-top:10px; border-top:1px solid var(--line); }
+.cal-head { display:flex; align-items:center; justify-content:space-between; padding:0 6px 8px; }
+.cal-title { font-family:var(--mono); font-size:12px; color:var(--ink2); letter-spacing:.5px; }
+.cal-nav { background:none; border:none; color:var(--muted); font-size:16px; width:24px; height:24px; border-radius:6px; line-height:1; }
+.cal-nav:hover { background:color-mix(in srgb,var(--ink) 7%,transparent); color:var(--ink); }
+.cal-dow { display:grid; grid-template-columns:repeat(7,1fr); gap:1px; margin-bottom:3px; }
+.cal-dow span { text-align:center; font-size:9.5px; color:var(--faint); font-family:var(--mono); padding:2px 0; }
+.cal-dow span:first-child { color:var(--c-video); } .cal-dow span:last-child { color:var(--c-news); }
+.cal-grid { display:grid; grid-template-columns:repeat(7,1fr); gap:2px; }
+.cal-day { aspect-ratio:1; display:grid; place-items:center; font-size:11px; font-family:var(--mono); color:var(--ink2); border-radius:7px; cursor:pointer; position:relative; transition:background .12s; }
+.cal-day.out { visibility:hidden; cursor:default; }
+.cal-day:hover:not(.out) { background:color-mix(in srgb,var(--ink) 8%,transparent); }
+.cal-day.has::after { content:""; position:absolute; bottom:3px; width:4px; height:4px; border-radius:50%; background:var(--gold); }
+.cal-day.today { color:var(--gold); font-weight:600; box-shadow:inset 0 0 0 1.5px var(--gold); }
+.cal-day.sel { background:var(--accent); color:#fff; }
+.cal-day.sel.has::after, .cal-day.sel.today { background:var(--accent); color:#fff; box-shadow:none; }
+.cal-day.sel.has::after { background:#fff; }
+
+/* 대시보드 — 주목 종목·섹터 패널 */
+.dash-h-note { margin-left:auto; font-weight:400; font-size:11px; font-family:var(--mono); color:var(--faint); }
+.dash-h.watch-h::after { display:none; }
+.dash-h.watch-h { gap:0; }
+.watch-panel { background:var(--surface); border:1px solid var(--line); border-radius:var(--r); padding:16px 18px; box-shadow:var(--shadow); margin-bottom:8px; border-left:4px solid var(--c-sector); }
+.watch-grid { display:flex; flex-wrap:wrap; gap:9px; }
+.watch-chip { display:inline-flex; align-items:center; gap:7px; background:color-mix(in srgb,var(--c-sector) 12%,transparent); color:var(--c-sector); border:1px solid color-mix(in srgb,var(--c-sector) 30%,transparent); font-family:var(--mono); font-size:13px; font-weight:600; padding:6px 13px; border-radius:9px; transition:transform .12s, filter .15s; }
+.watch-chip:hover { transform:translateY(-2px); filter:brightness(1.05); }
+.wc-count { background:var(--c-sector); color:#fff; font-size:10.5px; min-width:17px; height:17px; padding:0 4px; border-radius:9px; display:grid; place-items:center; }
+.watch-empty { color:var(--muted); font-size:13px; line-height:1.6; }
+
+.entry-chip.watch { color:var(--c-sector); background:color-mix(in srgb,var(--c-sector) 11%,transparent); border-color:color-mix(in srgb,var(--c-sector) 25%,transparent); }
+
+/* 에디터 — 주목 칩 입력 */
+.watch-wrap { border-color:color-mix(in srgb,var(--c-sector) 35%,var(--line2)); }
+.chip.chip-watch { background:color-mix(in srgb,var(--c-sector) 13%,transparent); color:var(--c-sector); }
+
+/* ============ 읽기(블로그) 페이지 ============ */
+.article { max-width:760px; animation:fadeUp .3s ease; }
+@keyframes fadeUp { from{opacity:0; transform:translateY(8px);} to{opacity:1; transform:none;} }
+.article-badge { display:inline-block; font-family:var(--mono); font-size:11px; font-weight:600; color:#fff; background:var(--dot,var(--accent)); padding:4px 12px; border-radius:20px; letter-spacing:.3px; margin-bottom:16px; }
+.article-date { font-family:var(--mono); font-size:12.5px; color:var(--gold); margin-bottom:8px; }
+.article-title { font-family:var(--serif); font-size:34px; font-weight:700; line-height:1.25; letter-spacing:-.8px; margin-bottom:14px; }
+.article-tags { display:flex; gap:7px; flex-wrap:wrap; margin-bottom:24px; }
+.article-content { font-size:16px; line-height:1.85; color:var(--ink); padding-bottom:8px; border-bottom:1px solid var(--line); }
+.article-content h1,.article-content h2,.article-content h3 { font-family:var(--serif); margin:1em 0 .4em; line-height:1.3; }
+.article-content h1 { font-size:1.5em; } .article-content h2 { font-size:1.3em; } .article-content h3 { font-size:1.14em; }
+.article-content p { margin:.7em 0; }
+.article-content ul,.article-content ol { margin:.7em 0; padding-left:1.6em; }
+.article-content li { margin:.3em 0; }
+.article-content blockquote { border-left:3px solid var(--dot,var(--accent)); margin:.9em 0; padding:.4em 0 .4em 1.1em; color:var(--ink2); background:color-mix(in srgb,var(--dot) 5%,transparent); border-radius:0 8px 8px 0; }
+.article-content a { color:var(--accent2); text-decoration:underline; text-underline-offset:2px; }
+.article-content code { font-family:var(--mono); font-size:.88em; background:color-mix(in srgb,var(--ink) 7%,transparent); padding:1px 5px; border-radius:5px; }
+.article-content pre { background:var(--surface2); border:1px solid var(--line); border-radius:8px; padding:14px; overflow-x:auto; font-family:var(--mono); font-size:.86em; }
+.article-content img { max-width:100%; border-radius:8px; margin:.5em 0; }
+.article-content table { border-collapse:collapse; margin:.6em 0; font-size:.94em; }
+.article-content td,.article-content th { border:1px solid var(--line2); padding:6px 11px; }
+.article-empty { color:var(--faint); font-style:italic; padding:10px 0 20px; border-bottom:1px solid var(--line); }
+
+.article-box { margin-top:24px; border-radius:var(--r); padding:18px 20px; }
+.box-label { font-family:var(--mono); font-size:11.5px; font-weight:600; letter-spacing:.3px; margin-bottom:12px; }
+.watch-box { background:color-mix(in srgb,var(--c-sector) 7%,var(--surface)); border:1px solid color-mix(in srgb,var(--c-sector) 22%,transparent); }
+.watch-box .box-label { color:var(--c-sector); }
+.thoughts-box { background:color-mix(in srgb,var(--gold) 8%,var(--surface)); border:1px solid color-mix(in srgb,var(--gold) 28%,transparent); }
+.thoughts-box .box-label { color:var(--gold); }
+.thoughts-box .box-content { font-size:15.5px; line-height:1.8; }
+.thoughts-box .box-content p { margin:.5em 0; }
+.thoughts-box .box-content ul,.thoughts-box .box-content ol { margin:.5em 0; padding-left:1.5em; }
+
+.article-actions { display:flex; justify-content:flex-end; gap:10px; margin-top:30px; }
+
+@media (max-width:880px){
+  .article-title { font-size:27px; }
+  .article-content { font-size:15px; }
+}
+
+/* ============ 동기화 UI ============ */
+.sync-status { font-family:var(--mono); font-size:10.5px; color:var(--muted); padding:6px 11px 8px; display:flex; align-items:center; gap:7px; min-height:14px; }
+.sync-status:empty { display:none; }
+.sync-dot { width:7px; height:7px; border-radius:50%; background:var(--muted); flex:none; }
+.sync-status.ok .sync-dot { background:var(--c-reading); }
+.sync-status.syncing .sync-dot { background:var(--gold); animation:pulse 1s infinite; }
+.sync-status.err { color:#c0563f; } .sync-status.err .sync-dot { background:#c0563f; }
+@keyframes pulse { 0%,100%{opacity:1;} 50%{opacity:.3;} }
+
+.sync-section { background:color-mix(in srgb,var(--accent) 4%,transparent); }
+.sync-form { display:flex; flex-direction:column; gap:11px; }
+.sync-label { display:flex; flex-direction:column; gap:4px; font-size:12px; font-weight:600; color:var(--ink2); }
+.sync-label .sync-hint { font-weight:400; font-size:10.5px; color:var(--faint); font-family:var(--mono); }
+.sync-in { border:1px solid var(--line2); border-radius:8px; padding:8px 12px; font-size:13px; color:var(--ink); background:var(--surface); font-family:var(--mono); }
+.sync-in:focus { outline:none; border-color:var(--accent); }
+.sync-adv { display:flex; gap:10px; }
+.sync-label.sm { flex:1; }
+.sync-state { font-family:var(--mono); font-size:11.5px; color:var(--muted); min-height:14px; margin:2px 0 0; }
+.sync-state.ok { color:var(--c-reading); } .sync-state.err { color:#c0563f; } .sync-state.syncing { color:var(--gold); }
+.sync-help { font-size:11.5px; margin-top:4px; }
+.sync-help a { color:var(--accent2); }

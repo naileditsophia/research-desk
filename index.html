@@ -25,12 +25,15 @@
 
     <nav class="nav" id="nav"><!-- nav items injected --></nav>
 
+    <div class="calendar" id="calendar"><!-- mini calendar injected --></div>
+
     <div class="sidebar-foot">
+      <div class="sync-status" id="syncStatus"></div>
       <button class="foot-btn" id="btnSearch" title="전체 검색 (Ctrl+K)">
         <span class="foot-ico">⌕</span><span>전체 검색</span>
       </button>
-      <button class="foot-btn" id="btnBackup" title="백업 / 가져오기">
-        <span class="foot-ico">⤓</span><span>백업 · 설정</span>
+      <button class="foot-btn" id="btnBackup" title="백업 · 동기화 · 설정">
+        <span class="foot-ico">⤓</span><span>백업 · 동기화</span>
       </button>
       <button class="foot-btn" id="btnTheme" title="테마 전환">
         <span class="foot-ico" id="themeIco">◐</span><span id="themeLabel">다크 모드</span>
@@ -62,7 +65,8 @@
       </div>
       <div class="editor-head-right">
         <button class="ghost-btn danger" id="btnDelete">삭제</button>
-        <button class="ghost-btn" id="btnCloseEditor">닫기 ✕</button>
+        <button class="icon-btn" id="btnCloseEditor" title="닫기 (저장됨)">✕</button>
+        <button class="solid-btn" id="btnDone">완료</button>
       </div>
     </header>
 
@@ -77,6 +81,14 @@
         <div class="block-label">내용 <span class="block-hint">붙여넣기 서식·아이콘 그대로 유지됩니다</span></div>
         <div class="rt-toolbar" data-target="fContent"></div>
         <div class="rt-editor" id="fContent" contenteditable="true" data-ph="여기에 영상 요약 / 뉴스 / 리포트 내용을 붙여넣으세요"></div>
+      </div>
+
+      <div class="block">
+        <div class="block-label">주목 종목 · 섹터 <span class="block-hint">이번 주 메인 페이지에 모여 표시됩니다</span></div>
+        <div class="tag-input-wrap watch-wrap">
+          <div class="tag-chips" id="watchChips"></div>
+          <input type="text" id="fWatchInput" class="tag-input" placeholder="종목·섹터 입력 후 Enter (예: 한국전력, 반도체)" />
+        </div>
       </div>
 
       <div class="block thoughts-block">
@@ -107,9 +119,34 @@
   <div class="modal-overlay" id="backupModal">
     <div class="modal modal-backup">
       <div class="modal-head">
-        <h3>백업 · 설정</h3>
+        <h3>백업 · 동기화</h3>
         <button class="ghost-btn" id="btnCloseBackup">✕</button>
       </div>
+
+      <div class="modal-section sync-section">
+        <h4>기기 간 동기화 (깃헙)</h4>
+        <p class="modal-desc">깃헙 저장소에 글을 자동 저장해 PC·폰에서 함께 봅니다. 토큰은 이 기기에만 저장되며 깃헙에 올라가지 않습니다. <b>투자 메모는 비공개(private) 저장소를 권장</b>합니다.</p>
+        <div class="sync-form">
+          <label class="sync-label">저장소 <span class="sync-hint">owner/repo</span>
+            <input type="text" id="syncRepo" class="sync-in" placeholder="tradermonty/research-data" />
+          </label>
+          <label class="sync-label">토큰 <span class="sync-hint">fine-grained PAT · Contents 읽기/쓰기</span>
+            <input type="password" id="syncToken" class="sync-in" placeholder="github_pat_…" autocomplete="off" />
+          </label>
+          <div class="sync-adv">
+            <label class="sync-label sm">브랜치<input type="text" id="syncBranch" class="sync-in" placeholder="main" /></label>
+            <label class="sync-label sm">파일 경로<input type="text" id="syncPath" class="sync-in" placeholder="data/research-desk.json" /></label>
+          </div>
+          <p class="sync-state" id="syncFormState"></p>
+          <div class="modal-actions">
+            <button class="solid-btn" id="btnSyncConnect">연결하고 동기화</button>
+            <button class="ghost-btn" id="btnSyncNow">지금 동기화</button>
+            <button class="ghost-btn danger" id="btnSyncOff">연결 해제</button>
+          </div>
+          <p class="modal-desc sync-help">토큰 만들기: 깃헙 → Settings → Developer settings → <b>Fine-grained tokens</b> → 데이터 저장소 1개만 선택 → Repository permissions의 <b>Contents</b>를 <b>Read and write</b>로. (<a href="https://github.com/settings/tokens?type=beta" target="_blank" rel="noopener">tokens 페이지 열기</a>)</p>
+        </div>
+      </div>
+
       <div class="modal-section">
         <h4>데이터 내보내기</h4>
         <p class="modal-desc">기록을 파일로 저장해 두세요. 브라우저 데이터가 지워져도 복원할 수 있습니다.</p>
