@@ -206,18 +206,21 @@
         <h3>관심종목 · 포트폴리오 관리</h3>
         <button class="ghost-btn" id="btnCloseTicker">✕</button>
       </div>
-      <p class="modal-desc">티커를 등록하면 메인에서 실시간 시세·전일대비 등락률·미니차트를 섹터별로 보여줍니다. 비중(%)을 넣으면 도넛 차트로 표시되고, "매도검토"를 켜면 표시됩니다. <b>시세는 Yahoo Finance(무료)에서 가져옵니다.</b></p>
+      <p class="modal-desc">티커만 넣으면 <b>섹터는 자동 분류</b>되고(필요하면 행에서 수정), <b>총자산과 보유금액</b>을 넣으면 <b>비중이 자동 계산</b>됩니다. "매도검토"를 켜면 메인에 표시돼요. <b>시세는 Yahoo Finance(무료)</b>에서 가져옵니다.</p>
+      <div class="tk-total">
+        <label>총자산</label>
+        <input type="number" id="tkTotalAssets" class="tk-in" placeholder="예: 50000000 (비우면 보유금액 합계 기준)" min="0" step="any" />
+        <span class="tk-total-note">통화 단위는 자유 (보유금액과 동일하게만 맞추면 됨)</span>
+      </div>
       <div class="ticker-rows" id="tickerRows"></div>
       <div class="ticker-add">
-        <input type="text" id="tkSym"    class="tk-in tk-sym"    placeholder="티커 (예: NVDA, AVGO, ^KS11)" />
+        <input type="text" id="tkSym"    class="tk-in tk-sym"    placeholder="티커 (예: NVDA, AVGO, ^IXIC)" />
         <input type="text" id="tkName"   class="tk-in tk-name"   placeholder="표시이름 (선택)" />
-        <input type="text" id="tkSector" class="tk-in tk-sector" placeholder="섹터 (예: 반도체)" list="sectorList" />
-        <input type="number" id="tkWeight" class="tk-in tk-weight" placeholder="비중%" min="0" max="100" step="0.1" />
+        <input type="number" id="tkAmount" class="tk-in tk-amt-in" placeholder="보유금액 (선택)" min="0" step="any" />
         <label class="tk-sell"><input type="checkbox" id="tkSell" /> 매도검토</label>
         <button class="solid-btn" id="btnAddTicker">＋ 추가</button>
       </div>
-      <datalist id="sectorList"></datalist>
-      <p class="modal-desc ticker-help">티커 형식은 Yahoo Finance 기준입니다. 미국주식은 그대로(AAPL), 한국주식은 종목코드.KS / .KQ (예: 005930.KS=삼성전자), 지수는 ^로 시작(^KS11=코스피, ^IXIC=나스닥).</p>
+      <p class="modal-desc ticker-help">티커는 Yahoo Finance 기준: 미국주식 그대로(AAPL), 한국주식 종목코드.KS/.KQ (005930.KS=삼성전자), 지수는 ^로 시작(^IXIC=나스닥, ^KS11=코스피). 섹터는 자동 분류되며 일부는 잠시 후 채워집니다.</p>
     </div>
   </div>
 </div>

@@ -499,24 +499,32 @@ input { font-family:inherit; }
 /* ---- 종목 관리 모달 ---- */
 .modal-ticker { width:min(680px,94vw); }
 .ticker-rows { display:flex; flex-direction:column; gap:3px; margin:14px 0; max-height:320px; overflow-y:auto; }
-.tk-row { display:grid; grid-template-columns:90px 1fr 110px 56px 78px 28px; align-items:center; gap:8px; padding:6px 8px; border-radius:8px; background:var(--surface2); }
+.tk-row { display:grid; grid-template-columns:84px 1fr 124px 52px 90px 70px 26px; align-items:center; gap:8px; padding:6px 8px; border-radius:8px; background:var(--surface2); }
 .tk-c { font-size:12.5px; color:var(--ink2); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .tk-c-sym { font-family:var(--mono); font-weight:600; color:var(--ink); }
-.tk-c-weight { font-family:var(--mono); text-align:right; }
+.tk-c-w { font-family:var(--mono); text-align:right; font-weight:600; color:var(--c-report); }
+.tk-secsel { font-size:11px; color:var(--ink2); background:var(--surface); border:1px solid var(--line2); border-radius:6px; padding:4px 4px; }
+.tk-secsel:focus { outline:none; border-color:var(--accent); }
+.tk-amt { font-family:var(--mono); font-size:11.5px; text-align:right; color:var(--ink); background:var(--surface); border:1px solid var(--line2); border-radius:6px; padding:4px 6px; }
+.tk-amt:focus { outline:none; border-color:var(--accent); }
 .tk-toggle { border:1px solid var(--line2); background:var(--surface); border-radius:6px; padding:3px 0; font-size:10.5px; font-family:var(--mono); color:var(--muted); }
 .tk-toggle.on { background:var(--down); border-color:var(--down); color:#fff; }
 .tk-del { border:none; background:none; color:var(--faint); font-size:14px; }
 .tk-del:hover { color:var(--down); }
 .tk-empty { color:var(--muted); font-size:13px; padding:14px; text-align:center; }
-.ticker-add { display:grid; grid-template-columns:1.1fr 1.1fr 1fr 64px auto auto; gap:8px; align-items:center; }
+.tk-total { display:flex; align-items:center; gap:10px; flex-wrap:wrap; padding:10px 12px; background:color-mix(in srgb,var(--c-report) 6%,transparent); border:1px solid var(--line); border-radius:10px; margin-bottom:4px; }
+.tk-total label { font-size:12.5px; font-weight:700; color:var(--ink2); }
+.tk-total #tkTotalAssets { flex:1; min-width:180px; font-family:var(--mono); }
+.tk-total-note { font-size:10.5px; color:var(--faint); }
+.ticker-add { display:grid; grid-template-columns:1.1fr 1.1fr 1fr auto auto; gap:8px; align-items:center; }
 .tk-in { border:1px solid var(--line2); border-radius:8px; padding:8px 10px; font-size:12.5px; color:var(--ink); background:var(--surface); }
 .tk-in:focus { outline:none; border-color:var(--accent); }
 .tk-sym { font-family:var(--mono); }
 .tk-sell { display:flex; align-items:center; gap:5px; font-size:11.5px; color:var(--ink2); white-space:nowrap; }
 .ticker-help { font-size:11px; margin-top:10px; line-height:1.6; }
 @media (max-width:620px){
-  .tk-row { grid-template-columns:70px 1fr 56px 64px 24px; }
-  .tk-row .tk-c-sector { display:none; }
+  .tk-row { grid-template-columns:64px 1fr 70px 60px 24px; }
+  .tk-row .tk-c-w, .tk-row .tk-toggle { display:none; }
   .ticker-add { grid-template-columns:1fr 1fr; }
 }
 
@@ -540,4 +548,40 @@ input { font-family:inherit; }
 @media (max-width:880px){
   .sidebar-close { display:grid; place-items:center; }
   .mkt-strip { grid-template-columns:repeat(2,1fr); }
+}
+
+/* ---- 헤드라인: 한국어 번역 표시 ---- */
+.news-src-tag { font-family:var(--mono); font-size:9px; font-weight:600; color:#fff; background:var(--src,var(--accent)); padding:1px 6px; border-radius:5px; letter-spacing:.3px; margin-left:2px; }
+.news-item { flex-direction:column; gap:2px; }
+.news-item > .news-time { align-self:flex-start; }
+.news-en { font-size:10.5px; color:var(--faint); line-height:1.35; display:-webkit-box; -webkit-line-clamp:1; -webkit-box-orient:vertical; overflow:hidden; }
+.news-title { font-weight:500; color:var(--ink2); }
+.news-item:hover .news-title { color:var(--ink); }
+
+/* ---- 포트폴리오: 요약 + 보유금액 ---- */
+.pf-summary { display:flex; flex-wrap:wrap; gap:18px; margin-bottom:14px; padding-bottom:12px; border-bottom:1px solid var(--line); font-size:12.5px; color:var(--muted); }
+.pf-summary b { font-family:var(--mono); color:var(--ink); font-weight:600; }
+.pf-amt { display:block; font-size:10px; color:var(--faint); font-weight:400; margin-top:1px; }
+.dl-cash .dl-label { color:var(--muted); }
+
+/* ---- 인물·인사이트 트래커 ---- */
+.people-wrap { margin-bottom:24px; }
+.people-strip { display:grid; grid-template-columns:repeat(3,1fr); gap:10px; }
+.person-card { background:var(--surface); border:1px solid var(--line); border-radius:12px; padding:12px 14px; box-shadow:var(--shadow); border-top:3px solid var(--pc,var(--accent)); min-width:0; }
+.person-head { display:flex; align-items:center; gap:7px; flex-wrap:wrap; margin-bottom:9px; padding-bottom:7px; border-bottom:1px solid var(--line); }
+.person-name { font-size:13px; font-weight:700; color:var(--ink); }
+.person-role { font-size:10.5px; color:var(--muted); }
+.person-links { margin-left:auto; display:flex; gap:6px; }
+.person-link { font-family:var(--mono); font-size:10px; font-weight:600; color:var(--pc,var(--accent)); text-decoration:none; border:1px solid color-mix(in srgb,var(--pc) 35%,transparent); padding:1px 6px; border-radius:6px; }
+.person-link:hover { background:color-mix(in srgb,var(--pc) 12%,transparent); }
+.person-news { display:flex; flex-direction:column; gap:3px; }
+.person-item { display:flex; align-items:baseline; gap:8px; padding:5px 4px; border-radius:6px; text-decoration:none; transition:background .12s; }
+.person-item:hover { background:color-mix(in srgb,var(--pc) 8%,transparent); }
+.pi-title { flex:1; font-size:12px; line-height:1.4; color:var(--ink2); display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
+.person-item:hover .pi-title { color:var(--ink); }
+.pi-time { flex:none; font-family:var(--mono); font-size:9.5px; color:var(--faint); white-space:nowrap; }
+.person-loading, .person-fail { font-size:11.5px; color:var(--muted); padding:6px 4px; }
+
+@media (max-width:880px){
+  .people-strip { grid-template-columns:1fr; }
 }

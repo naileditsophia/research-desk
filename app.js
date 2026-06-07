@@ -218,6 +218,12 @@ function renderDashboard() {
       <div class="mkt-strip" id="mktStrip">${mktStripSkeleton()}</div>
     </div>
 
+    <div class="people-wrap">
+      <div class="mkt-strip-head"><span class="mkt-strip-title">인물·인사이트 트래커 <span class="dash-h-note">야데니 · 트럼프 · 캐시우드 · 한국어</span></span>
+        <button class="mkt-refresh" id="peopleRefresh" title="새로고침">↻</button></div>
+      <div class="people-strip" id="peopleStrip">${peopleSkeleton()}</div>
+    </div>
+
     <div class="dash-hello">좋은 하루예요, Sophia 👋</div>
     <div class="dash-sub">오늘은 <b>${fullToday()}</b> · 기록이 쌓일수록 판단이 선명해집니다.</div>
     <div class="stats">
@@ -230,7 +236,7 @@ function renderDashboard() {
       <button class="dash-h-btn" id="btnManageTickers">＋ 종목 관리</button></div>
     <div class="pf-panel" id="pfPanel"></div>
 
-    <div class="dash-h news-h">실시간 헤드라인 <span class="dash-h-note">Reuters · Bloomberg · 제목 클릭 시 원문</span>
+    <div class="dash-h news-h">실시간 헤드라인 <span class="dash-h-note">Reuters · Bloomberg 경제 · 한국어 번역 · 클릭 시 원문</span>
       <button class="dash-h-btn" id="btnNewsRefresh">↻ 새로고침</button></div>
     <div class="news-panel" id="newsList"><div class="news-loading">헤드라인 불러오는 중…</div></div>
 
@@ -252,6 +258,7 @@ function renderDashboard() {
   $$(".watch-chip").forEach(c => c.onclick = () => openSearchWith(c.dataset.q));
   $("#btnManageTickers").onclick = openTickerModal;
   $("#mktRefresh").onclick = () => { $("#mktStrip").innerHTML = mktStripSkeleton(); MKT.quotes = {}; loadIndexStrip(); loadPortfolioQuotes(); };
+  const pr = $("#peopleRefresh"); if (pr) pr.onclick = () => { MKT.peopleAt = 0; $("#peopleStrip").innerHTML = peopleSkeleton(); loadPeople(); };
   $("#btnNewsRefresh").onclick = () => { MKT.newsAt = 0; $("#newsList").innerHTML = `<div class="news-loading">헤드라인 불러오는 중…</div>`; loadHeadlines(); };
   mountMarkets();
 }
@@ -627,11 +634,13 @@ function mergeStates(remote, local) {
   const entries = [...byId.values()].filter(e => !(del[e.id] && del[e.id] >= (e.updated||0)));
   const cutoff = Date.now() - 90*864e5;            // 90일 지난 묘비 정리
   Object.keys(del).forEach(id => { if (del[id] < cutoff) delete del[id]; });
-  // 관심종목: 더 최근에 수정된 쪽 채택 (last-write-wins)
+  // 관심종목 + 총자산: 더 최근에 수정된 쪽 채택 (last-write-wins)
   const rTU = (remote&&remote.tickersUpdated)||0, lTU = local.tickersUpdated||0;
+  const newer = (rTU > lTU) ? (remote||{}) : local;
   const tickers = (rTU > lTU) ? ((remote&&remote.tickers)||[]) : (local.tickers||[]);
+  const totalAssets = newer.totalAssets || 0;
   const tickersUpdated = Math.max(rTU, lTU);
-  return { entries, deleted: del, tickers, tickersUpdated };
+  return { entries, deleted: del, tickers, tickersUpdated, totalAssets };
 }
 
 let syncing = false, syncQueued = false, syncTimer = null;
@@ -652,10 +661,11 @@ async function syncNow(showToast) {
     const { data:remote, sha } = await ghGet();
     const merged = mergeStates(remote, state);
     const changed = JSON.stringify(state.entries) !== JSON.stringify(merged.entries)
-                 || JSON.stringify(state.tickers||[]) !== JSON.stringify(merged.tickers||[]);
+                 || JSON.stringify(state.tickers||[]) !== JSON.stringify(merged.tickers||[])
+                 || (state.totalAssets||0) !== (merged.totalAssets||0);
     state.entries = merged.entries; state.deleted = merged.deleted;
-    state.tickers = merged.tickers; state.tickersUpdated = merged.tickersUpdated; save();
-    const payload = { version:1, exportedAt:new Date().toISOString(), entries:state.entries, deleted:state.deleted, tickers:state.tickers, tickersUpdated:state.tickersUpdated };
+    state.tickers = merged.tickers; state.tickersUpdated = merged.tickersUpdated; state.totalAssets = merged.totalAssets; save();
+    const payload = { version:1, exportedAt:new Date().toISOString(), entries:state.entries, deleted:state.deleted, tickers:state.tickers, tickersUpdated:state.tickersUpdated, totalAssets:state.totalAssets };
     sync.sha = await ghPut(payload, sha); sync.lastAt = Date.now(); saveSync();
     setSyncStatus("ok", "동기화됨 · " + hhmm());
     if (changed && !$("#editor").classList.contains("show")) render();
@@ -787,7 +797,7 @@ async function proxyFetch(url, asJson){
 }
 
 /* ---------- Yahoo Finance 시세 ---------- */
-const MKT = { quotes:{}, ttl:60000, newsCache:null, newsTtl:180000, newsAt:0 };
+const MKT = { quotes:{}, ttl:60000, newsCache:null, newsTtl:180000, newsAt:0, peopleCache:null, peopleAt:0 };
 async function yahooQuote(symbol, range="1d", interval="5m"){
   const base = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?range=${range}&interval=${interval}&includePrePost=false`;
   const j = await proxyFetch(base, true);
@@ -836,6 +846,101 @@ function sparkSVG(data, up, w=78, h=26){
 }
 const upClass = d => d>=0 ? "up" : "down";
 
+/* ---------- 한국어 번역 (Google Translate 무료 엔드포인트, 키 불필요) ----------
+   - 번역 결과는 변하지 않으므로 localStorage에 영구 캐시 (동기화 state와는 분리)
+   - 실패 시 원문(영어) 그대로 노출 */
+const TR = { cache:{} };
+try { TR.cache = JSON.parse(localStorage.getItem("researchDesk.trans") || "{}") || {}; } catch(e){ TR.cache = {}; }
+let _trSaveT;
+function trSave(){ clearTimeout(_trSaveT); _trSaveT = setTimeout(()=>{ try{ localStorage.setItem("researchDesk.trans", JSON.stringify(TR.cache)); }catch(e){} }, 700); }
+async function translateKo(text){
+  const key = (text||"").trim();
+  if (!key) return "";
+  if (/[가-힣]/.test(key)) return key;            // 이미 한국어면 그대로
+  if (TR.cache[key]) return TR.cache[key];
+  try{
+    const url = "https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=ko&dt=t&q=" + encodeURIComponent(key);
+    const j = await proxyFetch(url, true);
+    const out = (j && Array.isArray(j[0])) ? j[0].map(s => s[0]).join("") : "";
+    if (out){ TR.cache[key] = out; trSave(); return out; }
+  }catch(e){}
+  return key;   // 실패 시 원문
+}
+
+/* ---------- 섹터 자동 분류 ---------- */
+const TICKER_SECTOR_KO = {
+  // 반도체
+  NVDA:"반도체", AMD:"반도체", AVGO:"반도체", MRVL:"반도체", TSM:"반도체", ASML:"반도체",
+  MU:"반도체", INTC:"반도체", QCOM:"반도체", TXN:"반도체", ARM:"반도체", SMCI:"반도체",
+  LRCX:"반도체", AMAT:"반도체", KLAC:"반도체", ON:"반도체", ADI:"반도체", NXPI:"반도체",
+  COHR:"반도체", ALAB:"반도체", MPWR:"반도체",
+  // 빅테크
+  AAPL:"빅테크", MSFT:"빅테크", GOOGL:"빅테크", GOOG:"빅테크", AMZN:"빅테크", META:"빅테크",
+  // AI·소프트웨어
+  PLTR:"AI·소프트웨어", CRM:"AI·소프트웨어", ORCL:"AI·소프트웨어", ADBE:"AI·소프트웨어",
+  NOW:"AI·소프트웨어", SNOW:"AI·소프트웨어", CRWD:"AI·소프트웨어", PANW:"AI·소프트웨어",
+  NET:"AI·소프트웨어", DDOG:"AI·소프트웨어", MDB:"AI·소프트웨어", APP:"AI·소프트웨어",
+  // 커뮤니케이션·미디어
+  NFLX:"커뮤니케이션·미디어", DIS:"커뮤니케이션·미디어", SPOT:"커뮤니케이션·미디어",
+  // 자동차·모빌리티
+  TSLA:"자동차·모빌리티", RIVN:"자동차·모빌리티", NIO:"자동차·모빌리티", F:"자동차·모빌리티", GM:"자동차·모빌리티",
+  // 금융·핀테크
+  JPM:"금융", BAC:"금융", GS:"금융", MS:"금융", "BRK-B":"금융", "BRK.B":"금융",
+  V:"금융", MA:"금융", PYPL:"핀테크·크립토", COIN:"핀테크·크립토", MSTR:"핀테크·크립토", HOOD:"핀테크·크립토",
+  // 헬스케어·바이오
+  LLY:"헬스케어·바이오", NVO:"헬스케어·바이오", UNH:"헬스케어·바이오", PFE:"헬스케어·바이오",
+  MRNA:"헬스케어·바이오", JNJ:"헬스케어·바이오", ABBV:"헬스케어·바이오",
+  // 에너지·원자재
+  XOM:"에너지", CVX:"에너지", COP:"에너지", OXY:"에너지",
+  // ETF
+  SOXL:"반도체 ETF", SOXX:"반도체 ETF", SMH:"반도체 ETF", USD:"반도체 ETF",
+  QQQ:"지수·ETF", TQQQ:"지수·ETF", SPY:"지수·ETF", VOO:"지수·ETF", DIA:"지수·ETF",
+  IWM:"지수·ETF", VTI:"지수·ETF", SCHD:"배당 ETF", JEPI:"배당 ETF", JEPQ:"배당 ETF",
+};
+const ENG_SECTOR_KO = {
+  "Technology":"빅테크·기술", "Communication Services":"커뮤니케이션·미디어",
+  "Consumer Cyclical":"소비재(경기)", "Consumer Defensive":"소비재(필수)",
+  "Financial Services":"금융", "Financial":"금융", "Healthcare":"헬스케어·바이오",
+  "Energy":"에너지", "Industrials":"산업재", "Basic Materials":"원자재",
+  "Real Estate":"부동산", "Utilities":"유틸리티",
+};
+// 즉시(동기) 추정: 사전 + 형식 기반
+function guessSectorSync(sym, name){
+  const u = (sym||"").toUpperCase();
+  if (TICKER_SECTOR_KO[u]) return TICKER_SECTOR_KO[u];
+  if (u.startsWith("^")) return "지수·ETF";
+  if (/\.(KS|KQ)$/i.test(u)) return "한국주식";
+  return "";   // 미정 → 비동기 보강
+}
+// 비동기 보강: Yahoo search 엔드포인트로 섹터 조회 후 한국어 매핑
+async function resolveSectorKo(sym){
+  try{
+    const url = "https://query2.finance.yahoo.com/v1/finance/search?q=" + encodeURIComponent(sym) + "&quotesCount=1&newsCount=0";
+    const j = await proxyFetch(url, true);
+    const q = j && j.quotes && j.quotes[0];
+    if (q){
+      const eng = q.sector || q.sectorDisp || "";
+      if (eng && ENG_SECTOR_KO[eng]) return ENG_SECTOR_KO[eng];
+      if (eng) return eng;
+      if (q.quoteType === "ETF") return "지수·ETF";
+    }
+  }catch(e){}
+  return "";
+}
+// 등록 종목 중 섹터 미정인 것들을 비동기로 채운 뒤 다시 그림
+async function fillMissingSectors(){
+  const pend = (state.tickers||[]).filter(t => !t.sector || t.sector === "미분류");
+  if (!pend.length) return;
+  let changed = false;
+  await Promise.allSettled(pend.map(async t => {
+    const ko = await resolveSectorKo(t.ticker);
+    if (ko){ t.sector = ko; changed = true; }
+    else if (!t.sector) { t.sector = "기타"; changed = true; }
+  }));
+  if (changed){ tickersTouched(); save(); if (typeof syncOn==="function" && syncOn()) scheduleSync(); renderPortfolio(); if ($("#tickerModal").classList.contains("show")) renderTickerRows(); }
+}
+const SECTOR_OPTIONS = ["반도체","반도체 ETF","빅테크·기술","AI·소프트웨어","커뮤니케이션·미디어","자동차·모빌리티","금융","핀테크·크립토","헬스케어·바이오","에너지","산업재","원자재","소비재(경기)","소비재(필수)","부동산","유틸리티","지수·ETF","배당 ETF","한국주식","기타"];
+
 /* ---------- 메인: 지수 스트립 (다우·나스닥·러셀·VIX) ---------- */
 const INDICES = [
   { sym:"^DJI",  label:"DOW" },
@@ -867,6 +972,13 @@ async function loadIndexStrip(){
     }
   }));
 }
+
+/* ---------- 비중 = 보유금액 / 기준자산 ----------
+   기준자산: 총자산 입력값이 있으면 그 값, 없으면 보유금액 합계 */
+function pfAmountSum(){ return (state.tickers||[]).reduce((a,t)=> a + (parseFloat(t.amount)||0), 0); }
+function pfBase(){ const ta = parseFloat(state.totalAssets)||0; return ta > 0 ? ta : pfAmountSum(); }
+function pfWeight(t){ const base = pfBase(); const amt = parseFloat(t.amount)||0; return base > 0 ? amt/base*100 : 0; }
+function fmtMoney(v){ if(v==null||isNaN(v)||!v) return "—"; return Number(v).toLocaleString("en-US"); }
 
 /* ---------- 메인: 관심종목 · 포트폴리오 (섹터별 + 비중 도넛 + 매도검토) ---------- */
 function pfBySector(){
@@ -900,16 +1012,19 @@ function renderPortfolio(){
   }
   const groups = pfBySector();
   const sectorNames = Object.keys(groups).sort();
-  // 도넛: 섹터별 비중 합 (비중 입력된 것만)
+  // 도넛: 섹터별 비중 합 (보유금액 기준 자동계산)
   const donutParts = sectorNames.map((s,i) => ({
     label:s, color:DONUT_COLORS[i%DONUT_COLORS.length],
-    value: groups[s].reduce((a,t)=>a+(parseFloat(t.weight)||0),0)
+    value: groups[s].reduce((a,t)=>a+(parseFloat(t.amount)||0),0)
   })).filter(p=>p.value>0);
   const totalW = donutParts.reduce((a,p)=>a+p.value,0);
+  const base = pfBase(), amtSum = pfAmountSum();
+  const cash = (parseFloat(state.totalAssets)||0) > 0 ? Math.max(0, base - amtSum) : 0;
+  const investedPct = base>0 ? amtSum/base*100 : 0;
 
   const groupHtml = sectorNames.map((s,si) => {
     const color = DONUT_COLORS[si%DONUT_COLORS.length];
-    const rows = groups[s].map(t => `
+    const rows = groups[s].map(t => { const w = pfWeight(t); const amt = parseFloat(t.amount)||0; return `
       <div class="pf-row ${t.sell?"sell":""}" data-sym="${esc(t.ticker)}">
         <div class="pf-id">
           <span class="pf-tk">${esc(t.ticker)}</span>
@@ -918,17 +1033,24 @@ function renderPortfolio(){
         </div>
         <div class="pf-spark"></div>
         <div class="pf-quote"><span class="pf-price">…</span><span class="pf-chg">—</span></div>
-        ${(parseFloat(t.weight)||0)>0?`<div class="pf-w">${(parseFloat(t.weight)||0).toFixed(1)}%</div>`:`<div class="pf-w faint">—</div>`}
-      </div>`).join("");
+        ${w>0?`<div class="pf-w">${w.toFixed(1)}%${amt?`<span class="pf-amt">${fmtMoney(amt)}</span>`:""}</div>`:`<div class="pf-w faint">—</div>`}
+      </div>`; }).join("");
     return `<div class="pf-sector">
       <div class="pf-sector-head"><span class="pf-sector-dot" style="background:${color}"></span>${esc(s)}<span class="pf-sector-n">${groups[s].length}</span></div>
       ${rows}</div>`;
   }).join("");
 
   const legend = donutParts.length ? `<div class="donut-wrap">${donutSVG(donutParts)}
-    <div class="donut-legend">${donutParts.map(p=>`<div class="dl-row"><span class="dl-dot" style="background:${p.color}"></span><span class="dl-label">${esc(p.label)}</span><span class="dl-val">${totalW?(p.value/totalW*100).toFixed(0):0}%</span></div>`).join("")}</div></div>` : "";
+    <div class="donut-legend">${donutParts.map(p=>`<div class="dl-row"><span class="dl-dot" style="background:${p.color}"></span><span class="dl-label">${esc(p.label)}</span><span class="dl-val">${totalW?(p.value/totalW*100).toFixed(0):0}%</span></div>`).join("")}
+      ${cash>0?`<div class="dl-row dl-cash"><span class="dl-dot" style="background:#bfc4cc"></span><span class="dl-label">현금</span><span class="dl-val">${(100-investedPct).toFixed(0)}%</span></div>`:""}</div></div>` : "";
 
-  panel.innerHTML = `<div class="pf-body">${legend}<div class="pf-groups">${groupHtml}</div></div>`;
+  const summary = base>0 ? `<div class="pf-summary">
+      <span>기준자산 <b>${fmtMoney(base)}</b></span>
+      <span>투자 <b>${fmtMoney(amtSum)}</b> (${investedPct.toFixed(0)}%)</span>
+      ${cash>0?`<span>현금 <b>${fmtMoney(cash)}</b></span>`:""}
+    </div>` : "";
+
+  panel.innerHTML = `${summary}<div class="pf-body">${legend}<div class="pf-groups">${groupHtml}</div></div>`;
   loadPortfolioQuotes();
 }
 async function loadPortfolioQuotes(){
@@ -952,52 +1074,61 @@ async function loadPortfolioQuotes(){
 /* ---------- 종목 관리 모달 ---------- */
 function tickersTouched(){ state.tickersUpdated = Date.now(); }
 function openTickerModal(){
-  renderTickerRows(); refreshSectorList();
+  const ta = $("#tkTotalAssets"); if (ta) ta.value = (parseFloat(state.totalAssets)||"") || "";
+  renderTickerRows();
   $("#tickerModal").classList.add("show");
+  fillMissingSectors();   // 섹터 미정 종목 비동기 보강
 }
-function refreshSectorList(){
-  const dl = $("#sectorList"); if (!dl) return;
-  const secs = [...new Set((state.tickers||[]).map(t=>t.sector).filter(Boolean))];
-  ["반도체","AI·소프트웨어","빅테크","2차전지","바이오","금융","에너지","소비재","지수·ETF","원자재"].forEach(s=>{ if(!secs.includes(s)) secs.push(s); });
-  dl.innerHTML = secs.map(s=>`<option value="${esc(s)}"></option>`).join("");
+function setTotalAssets(v){
+  state.totalAssets = parseFloat(v)||0;
+  tickersTouched(); save(); if(syncOn())scheduleSync();
+  renderTickerRows(); refreshDashboardMarkets();
 }
 function renderTickerRows(){
   const box = $("#tickerRows"); if (!box) return;
   const tickers = state.tickers || [];
-  box.innerHTML = tickers.length ? tickers.map((t,i)=>`
+  const opts = sec => SECTOR_OPTIONS.map(s=>`<option value="${esc(s)}" ${s===sec?"selected":""}>${esc(s)}</option>`).join("");
+  box.innerHTML = tickers.length ? tickers.map((t,i)=>{ const w = pfWeight(t); return `
     <div class="tk-row" data-i="${i}">
       <span class="tk-c tk-c-sym">${esc(t.ticker)}</span>
       <span class="tk-c tk-c-name">${esc(t.name||"")}</span>
-      <span class="tk-c tk-c-sector">${esc(t.sector||"미분류")}</span>
-      <span class="tk-c tk-c-weight">${(parseFloat(t.weight)||0)>0?(parseFloat(t.weight)).toFixed(1)+"%":"—"}</span>
+      <select class="tk-c tk-c-sector tk-secsel" data-sec="${i}" title="섹터 (자동분류 · 수정 가능)">${opts(t.sector||"기타")}</select>
+      <span class="tk-c tk-c-w">${w>0?w.toFixed(1)+"%":"—"}</span>
+      <input type="number" class="tk-c tk-c-amt tk-amt" data-amt="${i}" value="${parseFloat(t.amount)||""}" placeholder="보유금액" min="0" step="any" />
       <button class="tk-c tk-toggle ${t.sell?"on":""}" data-sell="${i}" title="매도검토 토글">${t.sell?"매도검토":"보유"}</button>
       <button class="tk-del" data-del="${i}" title="삭제">✕</button>
-    </div>`).join("") : `<div class="tk-empty">아직 등록된 종목이 없습니다. 아래에서 추가하세요.</div>`;
+    </div>`; }).join("") : `<div class="tk-empty">아직 등록된 종목이 없습니다. 아래에서 티커만 넣으면 섹터는 자동 분류됩니다.</div>`;
   $$(".tk-del", box).forEach(b=>b.onclick=()=>{ state.tickers.splice(+b.dataset.del,1); tickersTouched(); save(); if(syncOn())scheduleSync(); renderTickerRows(); refreshDashboardMarkets(); });
   $$(".tk-toggle", box).forEach(b=>b.onclick=()=>{ const t=state.tickers[+b.dataset.sell]; t.sell=!t.sell; tickersTouched(); save(); if(syncOn())scheduleSync(); renderTickerRows(); refreshDashboardMarkets(); });
+  $$(".tk-secsel", box).forEach(s=>s.onchange=()=>{ state.tickers[+s.dataset.sec].sector=s.value; tickersTouched(); save(); if(syncOn())scheduleSync(); renderTickerRows(); refreshDashboardMarkets(); });
+  $$(".tk-amt", box).forEach(inp=>inp.onchange=()=>{ state.tickers[+inp.dataset.amt].amount=parseFloat(inp.value)||0; tickersTouched(); save(); if(syncOn())scheduleSync(); renderTickerRows(); refreshDashboardMarkets(); });
 }
 function addTicker(){
   const sym = $("#tkSym").value.trim().toUpperCase();
   if (!sym){ toast("티커를 입력하세요."); return; }
   if ((state.tickers||[]).some(t=>t.ticker.toUpperCase()===sym)){ toast("이미 등록된 종목입니다."); return; }
   state.tickers = state.tickers || [];
-  state.tickers.push({
+  const t = {
     id: uid(), ticker: sym,
     name: $("#tkName").value.trim(),
-    sector: $("#tkSector").value.trim() || "미분류",
-    weight: parseFloat($("#tkWeight").value) || 0,
+    sector: guessSectorSync(sym, $("#tkName").value.trim()) || "미분류",
+    amount: parseFloat($("#tkAmount").value) || 0,
     sell: $("#tkSell").checked,
-  });
+  };
+  state.tickers.push(t);
   tickersTouched(); save(); if(syncOn())scheduleSync();
-  $("#tkSym").value=""; $("#tkName").value=""; $("#tkSector").value=""; $("#tkWeight").value=""; $("#tkSell").checked=false;
-  renderTickerRows(); refreshSectorList(); refreshDashboardMarkets();
+  $("#tkSym").value=""; $("#tkName").value=""; $("#tkAmount").value=""; $("#tkSell").checked=false;
+  renderTickerRows(); refreshDashboardMarkets();
+  if (t.sector === "미분류") resolveSectorKo(sym).then(ko=>{ if(ko){ t.sector=ko; } else { t.sector="기타"; } tickersTouched(); save(); if(syncOn())scheduleSync(); renderTickerRows(); refreshDashboardMarkets(); });
   $("#tkSym").focus();
 }
 
-/* ---------- 메인: Reuters · Bloomberg 헤드라인 ---------- */
+/* ---------- 메인: Reuters · Bloomberg 헤드라인 (경제 섹터 한정 · 한국어 번역) ---------- */
 const NEWS_FEEDS = [
-  { id:"reuters",   name:"Reuters",   color:"#fa6400", url:"https://news.google.com/rss/search?q=site:reuters.com%20when:2d&hl=en-US&gl=US&ceid=US:en" },
-  { id:"bloomberg", name:"Bloomberg", color:"#1a1a1a", url:"https://news.google.com/rss/search?q=site:bloomberg.com%20when:2d&hl=en-US&gl=US&ceid=US:en" },
+  { id:"reuters",   name:"Reuters",   color:"#fa6400",
+    url:"https://news.google.com/rss/search?q=(site:reuters.com/markets%20OR%20site:reuters.com/business)%20when:3d&hl=en-US&gl=US&ceid=US:en" },
+  { id:"bloomberg", name:"Bloomberg", color:"#1a1a1a",
+    url:"https://news.google.com/rss/search?q=(site:bloomberg.com/markets%20OR%20site:bloomberg.com/economics)%20when:3d&hl=en-US&gl=US&ceid=US:en" },
 ];
 function parseRSS(text){
   const xml = new DOMParser().parseFromString(text, "text/xml");
@@ -1020,7 +1151,9 @@ async function loadHeadlines(){
   if (MKT.newsCache && (Date.now()-MKT.newsAt) < MKT.newsTtl){ drawHeadlines(MKT.newsCache); return; }
   const results = await Promise.allSettled(NEWS_FEEDS.map(async f => {
     const text = await proxyFetch(f.url, false);
-    return { feed:f, items: parseRSS(text).slice(0,7) };
+    const items = parseRSS(text).slice(0,6).map(it=>({ ...it, title: cleanTitle(it.title, f.name) }));
+    await Promise.allSettled(items.map(async it => { it.ko = await translateKo(it.title); }));
+    return { feed:f, items };
   }));
   const data = results.map((r,i)=> r.status==="fulfilled" ? r.value : { feed:NEWS_FEEDS[i], items:[], err:true });
   MKT.newsCache = data; MKT.newsAt = Date.now();
@@ -1030,26 +1163,77 @@ function drawHeadlines(data){
   const panel = $("#newsList"); if (!panel) return;
   panel.innerHTML = data.map(d => `
     <div class="news-col">
-      <div class="news-src" style="--src:${d.feed.color}"><span class="news-src-dot"></span>${d.feed.name}</div>
+      <div class="news-src" style="--src:${d.feed.color}"><span class="news-src-dot"></span>${d.feed.name} <span class="news-src-tag">경제</span></div>
       ${d.items.length ? d.items.map(it=>`
-        <a class="news-item" href="${esc(it.link)}" target="_blank" rel="noopener">
-          <span class="news-title">${esc(cleanTitle(it.title, d.feed.name))}</span>
+        <a class="news-item" href="${esc(it.link)}" target="_blank" rel="noopener" title="${esc(it.title)}">
+          <span class="news-title">${esc(it.ko||it.title)}</span>
+          <span class="news-en">${esc(it.title)}</span>
           <span class="news-time">${relTime(it.date)}</span>
         </a>`).join("")
       : `<div class="news-fail">${d.err?"불러오기 실패 (프록시 차단 가능 — 새로고침 ↻)":"표시할 기사가 없습니다."}</div>`}
     </div>`).join("");
 }
 
+/* ---------- 메인: 인물·인사이트 트래커 (야데니·트럼프·캐시우드) ----------
+   ⚠️ 트위터/X는 무료 API 종료 + 스크래핑 차단으로 직접 수집 불가.
+   대신 (1) 발언을 다룬 뉴스(구글뉴스 RSS, 한국어 번역) (2) 본인 X·원문 링크 제공 */
+const PEOPLE = [
+  { id:"yardeni", name:"에드 야데니", role:"Yardeni Research", color:"#2f8a8a",
+    q:"\"Ed Yardeni\" OR Yardeni stock market when:7d",
+    links:[ {t:"X", u:"https://x.com/yardeni"}, {t:"블로그", u:"https://yardeniquicktakes.blogspot.com"} ] },
+  { id:"trump", name:"트럼프", role:"관세·경제 발언", color:"#c0563f",
+    q:"Trump tariffs OR Trump economy OR Trump trade when:3d",
+    links:[ {t:"Truth", u:"https://truthsocial.com/@realDonaldTrump"}, {t:"X", u:"https://x.com/realDonaldTrump"} ] },
+  { id:"cathie", name:"캐시 우드", role:"ARK Invest", color:"#7a5aa6",
+    q:"\"Cathie Wood\" OR \"ARK Invest\" when:7d",
+    links:[ {t:"X", u:"https://x.com/CathieDWood"}, {t:"ARK", u:"https://www.ark-invest.com"} ] },
+];
+function peopleSkeleton(){
+  return PEOPLE.map(p=>`<div class="person-card" data-pid="${p.id}" style="--pc:${p.color}">
+    <div class="person-head"><span class="person-name">${p.name}</span><span class="person-role">${p.role}</span>
+      <span class="person-links">${p.links.map(l=>`<a href="${l.u}" target="_blank" rel="noopener" class="person-link">${l.t}↗</a>`).join("")}</span></div>
+    <div class="person-news"><div class="person-loading">불러오는 중…</div></div></div>`).join("");
+}
+async function loadPeople(){
+  const wrap = $("#peopleStrip"); if (!wrap) return;
+  if (MKT.peopleCache && (Date.now()-MKT.peopleAt) < MKT.newsTtl){ drawPeople(MKT.peopleCache); return; }
+  const results = await Promise.allSettled(PEOPLE.map(async p => {
+    const url = "https://news.google.com/rss/search?q=" + encodeURIComponent(p.q) + "&hl=en-US&gl=US&ceid=US:en";
+    const text = await proxyFetch(url, false);
+    const items = parseRSS(text).slice(0,4);
+    await Promise.allSettled(items.map(async it => { it.ko = await translateKo(it.title.replace(/\s*-\s*[^-]+$/,"")); }));
+    return { person:p, items };
+  }));
+  const data = results.map((r,i)=> r.status==="fulfilled" ? r.value : { person:PEOPLE[i], items:[], err:true });
+  MKT.peopleCache = data; MKT.peopleAt = Date.now();
+  drawPeople(data);
+}
+function drawPeople(data){
+  const wrap = $("#peopleStrip"); if (!wrap) return;
+  wrap.innerHTML = data.map(d => `
+    <div class="person-card" style="--pc:${d.person.color}">
+      <div class="person-head"><span class="person-name">${d.person.name}</span><span class="person-role">${d.person.role}</span>
+        <span class="person-links">${d.person.links.map(l=>`<a href="${l.u}" target="_blank" rel="noopener" class="person-link">${l.t}↗</a>`).join("")}</span></div>
+      <div class="person-news">
+        ${d.items.length ? d.items.map(it=>`<a class="person-item" href="${esc(it.link)}" target="_blank" rel="noopener" title="${esc(it.title)}">
+            <span class="pi-title">${esc(it.ko||it.title)}</span><span class="pi-time">${relTime(it.date)}</span></a>`).join("")
+          : `<div class="person-fail">${d.err?"불러오기 실패 (새로고침 ↻)":"최근 기사 없음"}</div>`}
+      </div>
+    </div>`).join("");
+}
+
 /* ---------- 대시보드에 시장 모듈 마운트 ---------- */
 function refreshDashboardMarkets(force){
   if (parseRoute().type !== "dashboard") return;
-  if (force){ MKT.quotes = {}; MKT.newsAt = 0; }
+  if (force){ MKT.quotes = {}; MKT.newsAt = 0; MKT.peopleAt = 0; }
   loadIndexStrip();
   renderPortfolio();
   loadHeadlines();
+  loadPeople();
 }
 function mountMarkets(){
   loadIndexStrip();
+  loadPeople();
   renderPortfolio();
   loadHeadlines();
 }
@@ -1101,6 +1285,7 @@ function syncTitlePreset(){
 function init() {
   applyTheme();
   if (!state.tickers) state.tickers = [];
+  if (state.totalAssets == null) state.totalAssets = 0;
   initEditors();
   attachChipInput($("#fTagInput"), "tags");
   attachChipInput($("#fWatchInput"), "watch");
@@ -1177,9 +1362,11 @@ function init() {
   // 종목 관리 모달
   $("#btnAddTicker").onclick = addTicker;
   $("#btnCloseTicker").onclick = () => $("#tickerModal").classList.remove("show");
-  ["tkSym","tkName","tkSector","tkWeight"].forEach(id => {
+  ["tkSym","tkName","tkAmount"].forEach(id => {
     const el = $("#"+id); if (el) el.addEventListener("keydown", e => { if (e.key==="Enter") addTicker(); });
   });
+  const taIn = $("#tkTotalAssets");
+  if (taIn) taIn.addEventListener("change", () => setTotalAssets(taIn.value));
 
   // 제목 프리셋 드롭다운
   $("#fTitlePreset").onchange = e => {
@@ -1210,6 +1397,6 @@ function init() {
   setInterval(() => { if (syncOn() && !$("#editor").classList.contains("show") && !document.hidden) syncNow(false); }, 60000);
 
   // 시세·헤드라인 자동 새로고침 (대시보드일 때, 60초마다)
-  setInterval(() => { if (!document.hidden && parseRoute().type==="dashboard" && !$("#editor").classList.contains("show")) { loadIndexStrip(); loadPortfolioQuotes(); loadHeadlines(); } }, 60000);
+  setInterval(() => { if (!document.hidden && parseRoute().type==="dashboard" && !$("#editor").classList.contains("show")) { loadIndexStrip(); loadPortfolioQuotes(); loadHeadlines(); loadPeople(); } }, 60000);
 }
 document.addEventListener("DOMContentLoaded", init);
