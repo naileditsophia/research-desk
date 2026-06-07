@@ -219,7 +219,7 @@ function renderDashboard() {
     </div>
 
     <div class="people-wrap">
-      <div class="mkt-strip-head"><span class="mkt-strip-title">인물·인사이트 트래커 <span class="dash-h-note">야데니 · 트럼프 · 캐시우드 · 한국어</span></span>
+      <div class="mkt-strip-head"><span class="mkt-strip-title">인물·인사이트 트래커 <span class="dash-h-note">야데니 · 트럼프 · 강세/약세 · 뉴스·Reddit·X</span></span>
         <button class="mkt-refresh" id="peopleRefresh" title="새로고침">↻</button></div>
       <div class="people-strip" id="peopleStrip">${peopleSkeleton()}</div>
     </div>
@@ -236,7 +236,7 @@ function renderDashboard() {
       <button class="dash-h-btn" id="btnManageTickers">＋ 종목 관리</button></div>
     <div class="pf-panel" id="pfPanel"></div>
 
-    <div class="dash-h news-h">실시간 헤드라인 <span class="dash-h-note">Reuters · Bloomberg 경제 · 한국어 번역 · 클릭 시 원문</span>
+    <div class="dash-h news-h">실시간 헤드라인 <span class="dash-h-note">매일경제 · The Economist(번역) · 클릭 시 원문</span>
       <button class="dash-h-btn" id="btnNewsRefresh">↻ 새로고침</button></div>
     <div class="news-panel" id="newsList"><div class="news-loading">헤드라인 불러오는 중…</div></div>
 
@@ -941,15 +941,17 @@ async function fillMissingSectors(){
 }
 const SECTOR_OPTIONS = ["반도체","반도체 ETF","빅테크·기술","AI·소프트웨어","커뮤니케이션·미디어","자동차·모빌리티","금융","핀테크·크립토","헬스케어·바이오","에너지","산업재","원자재","소비재(경기)","소비재(필수)","부동산","유틸리티","지수·ETF","배당 ETF","한국주식","기타"];
 
-/* ---------- 메인: 지수 스트립 (다우·나스닥·러셀·VIX) ---------- */
+/* ---------- 메인: 지수 스트립 (다우·나스닥·러셀·VIX + 환율) ---------- */
 const INDICES = [
   { sym:"^DJI",  label:"DOW" },
   { sym:"^IXIC", label:"NASDAQ" },
   { sym:"^RUT",  label:"RUSSELL 2K" },
   { sym:"^VIX",  label:"VIX" },
+  { sym:"KRW=X", label:"USD/KRW", fx:true },
+  { sym:"JPY=X", label:"USD/JPY", fx:true },
 ];
 function mktStripSkeleton(){
-  return INDICES.map(ix => `<div class="mkt-cell" data-sym="${ix.sym}">
+  return INDICES.map(ix => `<div class="mkt-cell ${ix.fx?"fx":""}" data-sym="${ix.sym}">
     <div class="mkt-cell-top"><span class="mkt-label">${ix.label}</span><span class="mkt-spark"></span></div>
     <div class="mkt-price">로딩…</div>
     <div class="mkt-chg">—</div></div>`).join("");
@@ -1024,12 +1026,13 @@ function renderPortfolio(){
 
   const groupHtml = sectorNames.map((s,si) => {
     const color = DONUT_COLORS[si%DONUT_COLORS.length];
-    const rows = groups[s].map(t => { const w = pfWeight(t); const amt = parseFloat(t.amount)||0; return `
+    const rows = groups[s].map(t => { const w = pfWeight(t); const amt = parseFloat(t.amount)||0; const saSym = encodeURIComponent(t.ticker.replace(/\.(KS|KQ)$/i,"").replace(/^\^/,"")); return `
       <div class="pf-row ${t.sell?"sell":""}" data-sym="${esc(t.ticker)}">
         <div class="pf-id">
           <span class="pf-tk">${esc(t.ticker)}</span>
           ${t.name?`<span class="pf-nm">${esc(t.name)}</span>`:""}
           ${t.sell?`<span class="pf-sellbadge">매도검토</span>`:""}
+          <a class="pf-sa" href="https://seekingalpha.com/symbol/${saSym}" target="_blank" rel="noopener" title="Seeking Alpha에서 보기">SA↗</a>
         </div>
         <div class="pf-spark"></div>
         <div class="pf-quote"><span class="pf-price">…</span><span class="pf-chg">—</span></div>
@@ -1123,12 +1126,12 @@ function addTicker(){
   $("#tkSym").focus();
 }
 
-/* ---------- 메인: Reuters · Bloomberg 헤드라인 (경제 섹터 한정 · 한국어 번역) ---------- */
+/* ---------- 메인: 매일경제 · The Economist 헤드라인 ---------- */
 const NEWS_FEEDS = [
-  { id:"reuters",   name:"Reuters",   color:"#fa6400",
-    url:"https://news.google.com/rss/search?q=(site:reuters.com/markets%20OR%20site:reuters.com/business)%20when:3d&hl=en-US&gl=US&ceid=US:en" },
-  { id:"bloomberg", name:"Bloomberg", color:"#1a1a1a",
-    url:"https://news.google.com/rss/search?q=(site:bloomberg.com/markets%20OR%20site:bloomberg.com/economics)%20when:3d&hl=en-US&gl=US&ceid=US:en" },
+  { id:"mk", name:"매일경제", color:"#d6242b", lang:"ko",
+    url:"https://news.google.com/rss/search?q=site:mk.co.kr%20when:1d&hl=ko&gl=KR&ceid=KR:ko" },
+  { id:"economist", name:"The Economist", color:"#e3120b", lang:"en",
+    url:"https://news.google.com/rss/search?q=site:economist.com%20when:7d&hl=en-US&gl=US&ceid=US:en" },
 ];
 function parseRSS(text){
   const xml = new DOMParser().parseFromString(text, "text/xml");
@@ -1152,7 +1155,7 @@ async function loadHeadlines(){
   const results = await Promise.allSettled(NEWS_FEEDS.map(async f => {
     const text = await proxyFetch(f.url, false);
     const items = parseRSS(text).slice(0,6).map(it=>({ ...it, title: cleanTitle(it.title, f.name) }));
-    await Promise.allSettled(items.map(async it => { it.ko = await translateKo(it.title); }));
+    if (f.lang === "en") await Promise.allSettled(items.map(async it => { it.ko = await translateKo(it.title); }));
     return { feed:f, items };
   }));
   const data = results.map((r,i)=> r.status==="fulfilled" ? r.value : { feed:NEWS_FEEDS[i], items:[], err:true });
@@ -1161,65 +1164,108 @@ async function loadHeadlines(){
 }
 function drawHeadlines(data){
   const panel = $("#newsList"); if (!panel) return;
-  panel.innerHTML = data.map(d => `
+  panel.innerHTML = data.map(d => {
+    const isEn = d.feed.lang === "en";
+    return `
     <div class="news-col">
-      <div class="news-src" style="--src:${d.feed.color}"><span class="news-src-dot"></span>${d.feed.name} <span class="news-src-tag">경제</span></div>
+      <div class="news-src" style="--src:${d.feed.color}"><span class="news-src-dot"></span>${d.feed.name}${isEn?` <span class="news-src-tag">번역</span>`:""}</div>
       ${d.items.length ? d.items.map(it=>`
         <a class="news-item" href="${esc(it.link)}" target="_blank" rel="noopener" title="${esc(it.title)}">
           <span class="news-title">${esc(it.ko||it.title)}</span>
-          <span class="news-en">${esc(it.title)}</span>
+          ${isEn?`<span class="news-en">${esc(it.title)}</span>`:""}
           <span class="news-time">${relTime(it.date)}</span>
         </a>`).join("")
       : `<div class="news-fail">${d.err?"불러오기 실패 (프록시 차단 가능 — 새로고침 ↻)":"표시할 기사가 없습니다."}</div>`}
-    </div>`).join("");
+    </div>`;
+  }).join("");
 }
 
-/* ---------- 메인: 인물·인사이트 트래커 (야데니·트럼프·캐시우드) ----------
-   ⚠️ 트위터/X는 무료 API 종료 + 스크래핑 차단으로 직접 수집 불가.
-   대신 (1) 발언을 다룬 뉴스(구글뉴스 RSS, 한국어 번역) (2) 본인 X·원문 링크 제공 */
+/* ---------- 메인: 인물·인사이트 트래커 (야데니 · 트럼프) ----------
+   ⚠️ 트위터/X는 무료 API 종료 + 스크래핑 차단으로 직접 본문 수집 불가 → X 실시간 검색 링크로 연결
+   ⓐ 관련 뉴스(구글뉴스 RSS, 한국어 번역) ⓑ Reddit 공개 검색(JSON) ⓒ X 실시간 검색 링크
+   강세/약세 배지 = 최근 뉴스·레딧 제목의 강세/약세 키워드 자동 집계(추정) */
 const PEOPLE = [
   { id:"yardeni", name:"에드 야데니", role:"Yardeni Research", color:"#2f8a8a",
-    q:"\"Ed Yardeni\" OR Yardeni stock market when:7d",
-    links:[ {t:"X", u:"https://x.com/yardeni"}, {t:"블로그", u:"https://yardeniquicktakes.blogspot.com"} ] },
+    base:"장기 강세론", q:"\"Ed Yardeni\" market when:7d", x:"yardeni" },
   { id:"trump", name:"트럼프", role:"관세·경제 발언", color:"#c0563f",
-    q:"Trump tariffs OR Trump economy OR Trump trade when:3d",
-    links:[ {t:"Truth", u:"https://truthsocial.com/@realDonaldTrump"}, {t:"X", u:"https://x.com/realDonaldTrump"} ] },
-  { id:"cathie", name:"캐시 우드", role:"ARK Invest", color:"#7a5aa6",
-    q:"\"Cathie Wood\" OR \"ARK Invest\" when:7d",
-    links:[ {t:"X", u:"https://x.com/CathieDWood"}, {t:"ARK", u:"https://www.ark-invest.com"} ] },
+    base:"", q:"Trump tariffs OR Trump economy OR Trump stock market when:3d", x:"realDonaldTrump" },
 ];
+const BULL_WORDS = ["rally","surge","gain","record high","bullish","optimis","upbeat","jump","soar","boom","rebound","beat","strong","upgrade","outperform","melt-up","상승","강세","사상 최고","사상최고","낙관","반등","호조","급등","매수"];
+const BEAR_WORDS = ["fall","drop","plunge","crash","bearish","recession","fear","sell-off","selloff","slump","tumble","downgrade","warn","weak","risk","correction","slowdown","downturn","하락","약세","폭락","경기 침체","경기침체","우려","급락","위험","조정","둔화"];
+function tone(titles){
+  const txt = titles.join(" ").toLowerCase();
+  let b=0, r=0;
+  BULL_WORDS.forEach(w=>{ if(txt.includes(w.toLowerCase())) b++; });
+  BEAR_WORDS.forEach(w=>{ if(txt.includes(w.toLowerCase())) r++; });
+  if (b===0 && r===0) return { k:"neutral", t:"중립" };
+  if (b>r) return { k:"bull", t:"강세" };
+  if (r>b) return { k:"bear", t:"약세" };
+  return { k:"neutral", t:"혼조" };
+}
+async function redditSearch(q){
+  try{
+    const url = "https://www.reddit.com/search.json?q=" + encodeURIComponent(q) + "&sort=new&limit=5&t=week";
+    const j = await proxyFetch(url, true);
+    const ch = (j && j.data && j.data.children) || [];
+    return ch.map(c=>c.data).filter(d=>d&&d.title).map(d=>({
+      title:d.title, link:"https://www.reddit.com"+d.permalink, sub:d.subreddit_name_prefixed||("r/"+d.subreddit), date:new Date((d.created_utc||0)*1000).toISOString(),
+    }));
+  }catch(e){ return null; }
+}
 function peopleSkeleton(){
-  return PEOPLE.map(p=>`<div class="person-card" data-pid="${p.id}" style="--pc:${p.color}">
-    <div class="person-head"><span class="person-name">${p.name}</span><span class="person-role">${p.role}</span>
-      <span class="person-links">${p.links.map(l=>`<a href="${l.u}" target="_blank" rel="noopener" class="person-link">${l.t}↗</a>`).join("")}</span></div>
-    <div class="person-news"><div class="person-loading">불러오는 중…</div></div></div>`).join("");
+  return PEOPLE.map(p=>`<div class="person-card" style="--pc:${p.color}">
+    <div class="person-head"><span class="person-name">${p.name}</span><span class="person-role">${p.role}</span></div>
+    <div class="person-body"><div class="person-loading">불러오는 중…</div></div></div>`).join("");
 }
 async function loadPeople(){
   const wrap = $("#peopleStrip"); if (!wrap) return;
   if (MKT.peopleCache && (Date.now()-MKT.peopleAt) < MKT.newsTtl){ drawPeople(MKT.peopleCache); return; }
   const results = await Promise.allSettled(PEOPLE.map(async p => {
-    const url = "https://news.google.com/rss/search?q=" + encodeURIComponent(p.q) + "&hl=en-US&gl=US&ceid=US:en";
-    const text = await proxyFetch(url, false);
-    const items = parseRSS(text).slice(0,4);
-    await Promise.allSettled(items.map(async it => { it.ko = await translateKo(it.title.replace(/\s*-\s*[^-]+$/,"")); }));
-    return { person:p, items };
+    const newsUrl = "https://news.google.com/rss/search?q=" + encodeURIComponent(p.q) + "&hl=en-US&gl=US&ceid=US:en";
+    const [newsText, reddit] = await Promise.all([
+      proxyFetch(newsUrl, false).catch(()=>null),
+      redditSearch(p.id==="yardeni" ? "Yardeni" : "Trump market OR Trump tariffs"),
+    ]);
+    const news = newsText ? parseRSS(newsText).slice(0,4).map(it=>({ ...it, title: it.title.replace(/\s*-\s*[^-]+$/,"") })) : [];
+    await Promise.allSettled(news.map(async it => { it.ko = await translateKo(it.title); }));
+    const rd = (reddit||[]).slice(0,4);
+    await Promise.allSettled(rd.map(async it => { it.ko = await translateKo(it.title); }));
+    const tn = tone([...news, ...rd].map(x=>x.title));
+    return { person:p, news, reddit:rd, tone:tn, redditErr: reddit===null };
   }));
-  const data = results.map((r,i)=> r.status==="fulfilled" ? r.value : { person:PEOPLE[i], items:[], err:true });
+  const data = results.map((r,i)=> r.status==="fulfilled" ? r.value : { person:PEOPLE[i], news:[], reddit:[], tone:{k:"neutral",t:"—"}, err:true });
   MKT.peopleCache = data; MKT.peopleAt = Date.now();
   drawPeople(data);
 }
 function drawPeople(data){
   const wrap = $("#peopleStrip"); if (!wrap) return;
-  wrap.innerHTML = data.map(d => `
-    <div class="person-card" style="--pc:${d.person.color}">
-      <div class="person-head"><span class="person-name">${d.person.name}</span><span class="person-role">${d.person.role}</span>
-        <span class="person-links">${d.person.links.map(l=>`<a href="${l.u}" target="_blank" rel="noopener" class="person-link">${l.t}↗</a>`).join("")}</span></div>
-      <div class="person-news">
-        ${d.items.length ? d.items.map(it=>`<a class="person-item" href="${esc(it.link)}" target="_blank" rel="noopener" title="${esc(it.title)}">
-            <span class="pi-title">${esc(it.ko||it.title)}</span><span class="pi-time">${relTime(it.date)}</span></a>`).join("")
-          : `<div class="person-fail">${d.err?"불러오기 실패 (새로고침 ↻)":"최근 기사 없음"}</div>`}
+  wrap.innerHTML = data.map(d => {
+    const p = d.person;
+    const xNews = `https://x.com/search?q=${encodeURIComponent(p.id==="yardeni"?"Yardeni":"Trump market")}&f=live`;
+    const xProfile = `https://x.com/${p.x}`;
+    return `<div class="person-card" style="--pc:${p.color}">
+      <div class="person-head">
+        <span class="person-name">${p.name}</span>
+        <span class="person-stance ${d.tone.k}">${d.tone.t}</span>
+        ${p.base?`<span class="person-base">${p.base}</span>`:""}
+        <span class="person-links">
+          <a href="${xProfile}" target="_blank" rel="noopener" class="person-link">X↗</a>
+          <a href="${xNews}" target="_blank" rel="noopener" class="person-link">X검색↗</a>
+        </span>
       </div>
-    </div>`).join("");
+      <div class="person-body">
+        <div class="person-sec-t">📰 뉴스</div>
+        ${d.news.length ? d.news.map(it=>`<a class="person-item" href="${esc(it.link)}" target="_blank" rel="noopener" title="${esc(it.title)}">
+            <span class="pi-title">${esc(it.ko||it.title)}</span><span class="pi-time">${relTime(it.date)}</span></a>`).join("")
+          : `<div class="person-fail">${d.err?"불러오기 실패 (↻)":"최근 기사 없음"}</div>`}
+        <div class="person-sec-t">👥 Reddit</div>
+        ${d.reddit.length ? d.reddit.map(it=>`<a class="person-item" href="${esc(it.link)}" target="_blank" rel="noopener" title="${esc(it.title)}">
+            <span class="pi-sub">${esc(it.sub)}</span><span class="pi-title">${esc(it.ko||it.title)}</span><span class="pi-time">${relTime(it.date)}</span></a>`).join("")
+          : `<div class="person-fail">${d.redditErr?"Reddit 차단/실패 (↻)":"관련 글 없음"}</div>`}
+      </div>
+      <div class="person-tone-note">강세/약세는 최근 뉴스·레딧 제목 기반 자동 추정</div>
+    </div>`;
+  }).join("");
 }
 
 /* ---------- 대시보드에 시장 모듈 마운트 ---------- */
