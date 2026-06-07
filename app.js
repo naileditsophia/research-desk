@@ -797,7 +797,7 @@ async function proxyFetch(url, asJson){
 }
 
 /* ---------- Yahoo Finance 시세 ---------- */
-const MKT = { quotes:{}, ttl:60000, newsCache:null, newsTtl:180000, newsAt:0, peopleCache:null, peopleAt:0 };
+const MKT_VER = "20260607b"; const MKT = { quotes:{}, ttl:60000, newsCache:null, newsTtl:180000, newsAt:0, peopleCache:null, peopleAt:0 };
 async function yahooQuote(symbol, range="1d", interval="5m"){
   const base = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?range=${range}&interval=${interval}&includePrePost=false`;
   const j = await proxyFetch(base, true);
@@ -1129,7 +1129,7 @@ function addTicker(){
 /* ---------- 메인: 매일경제 · The Economist 헤드라인 ---------- */
 const NEWS_FEEDS = [
   { id:"mk", name:"매일경제", color:"#d6242b", lang:"ko",
-    url:"https://www.mk.co.kr/rss/40300001/" },
+    url:"https://news.google.com/rss/search?q=site:mk.co.kr+(경제+OR+주식+OR+금리+OR+환율+OR+증시+OR+ETF+OR+Fed+OR+연준)+when:1d&hl=ko&gl=KR&ceid=KR:ko" },
   { id:"economist", name:"The Economist", color:"#e3120b", lang:"en",
     url:"https://news.google.com/rss/search?q=site:economist.com%20when:7d&hl=en-US&gl=US&ceid=US:en" },
 ];
