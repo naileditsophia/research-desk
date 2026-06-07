@@ -1129,7 +1129,7 @@ function addTicker(){
 /* ---------- 메인: 매일경제 · The Economist 헤드라인 ---------- */
 const NEWS_FEEDS = [
   { id:"mk", name:"매일경제", color:"#d6242b", lang:"ko",
-    url:"https://news.google.com/rss/search?q=site:mk.co.kr%20when:1d&hl=ko&gl=KR&ceid=KR:ko" },
+    url:"https://www.mk.co.kr/rss/40300001/" },
   { id:"economist", name:"The Economist", color:"#e3120b", lang:"en",
     url:"https://news.google.com/rss/search?q=site:economist.com%20when:7d&hl=en-US&gl=US&ceid=US:en" },
 ];
@@ -1202,15 +1202,9 @@ function tone(titles){
   if (r>b) return { k:"bear", t:"약세" };
   return { k:"neutral", t:"혼조" };
 }
-async function redditSearch(q){
-  try{
-    const url = "https://www.reddit.com/search.json?q=" + encodeURIComponent(q) + "&sort=new&limit=5&t=week";
-    const j = await proxyFetch(url, true);
-    const ch = (j && j.data && j.data.children) || [];
-    return ch.map(c=>c.data).filter(d=>d&&d.title).map(d=>({
-      title:d.title, link:"https://www.reddit.com"+d.permalink, sub:d.subreddit_name_prefixed||("r/"+d.subreddit), date:new Date((d.created_utc||0)*1000).toISOString(),
-    }));
-  }catch(e){ return null; }
+function redditSearchUrl(q){
+  // Reddit API는 브라우저에서 차단됨 → 실시간 Reddit 검색 링크로 연결
+  return "https://www.reddit.com/search/?q=" + encodeURIComponent(q) + "&sort=new&t=week";
 }
 function peopleSkeleton(){
   return PEOPLE.map(p=>`<div class="person-card" style="--pc:${p.color}">
@@ -1222,18 +1216,14 @@ async function loadPeople(){
   if (MKT.peopleCache && (Date.now()-MKT.peopleAt) < MKT.newsTtl){ drawPeople(MKT.peopleCache); return; }
   const results = await Promise.allSettled(PEOPLE.map(async p => {
     const newsUrl = "https://news.google.com/rss/search?q=" + encodeURIComponent(p.q) + "&hl=en-US&gl=US&ceid=US:en";
-    const [newsText, reddit] = await Promise.all([
-      proxyFetch(newsUrl, false).catch(()=>null),
-      redditSearch(p.id==="yardeni" ? "Yardeni" : "Trump market OR Trump tariffs"),
-    ]);
+    const newsText = await proxyFetch(newsUrl, false).catch(()=>null);
     const news = newsText ? parseRSS(newsText).slice(0,4).map(it=>({ ...it, title: it.title.replace(/\s*-\s*[^-]+$/,"") })) : [];
     await Promise.allSettled(news.map(async it => { it.ko = await translateKo(it.title); }));
-    const rd = (reddit||[]).slice(0,4);
-    await Promise.allSettled(rd.map(async it => { it.ko = await translateKo(it.title); }));
-    const tn = tone([...news, ...rd].map(x=>x.title));
-    return { person:p, news, reddit:rd, tone:tn, redditErr: reddit===null };
+    const redditUrl = redditSearchUrl(p.id==="yardeni" ? "Yardeni Research" : "Trump market OR Trump tariffs");
+    const tn = tone(news.map(x=>x.title));
+    return { person:p, news, redditUrl, tone:tn };
   }));
-  const data = results.map((r,i)=> r.status==="fulfilled" ? r.value : { person:PEOPLE[i], news:[], reddit:[], tone:{k:"neutral",t:"—"}, err:true });
+  const data = results.map((r,i)=> r.status==="fulfilled" ? r.value : { person:PEOPLE[i], news:[], redditUrl:"", tone:{k:"neutral",t:"—"}, err:true });
   MKT.peopleCache = data; MKT.peopleAt = Date.now();
   drawPeople(data);
 }
@@ -1259,9 +1249,8 @@ function drawPeople(data){
             <span class="pi-title">${esc(it.ko||it.title)}</span><span class="pi-time">${relTime(it.date)}</span></a>`).join("")
           : `<div class="person-fail">${d.err?"불러오기 실패 (↻)":"최근 기사 없음"}</div>`}
         <div class="person-sec-t">👥 Reddit</div>
-        ${d.reddit.length ? d.reddit.map(it=>`<a class="person-item" href="${esc(it.link)}" target="_blank" rel="noopener" title="${esc(it.title)}">
-            <span class="pi-sub">${esc(it.sub)}</span><span class="pi-title">${esc(it.ko||it.title)}</span><span class="pi-time">${relTime(it.date)}</span></a>`).join("")
-          : `<div class="person-fail">${d.redditErr?"Reddit 차단/실패 (↻)":"관련 글 없음"}</div>`}
+        ${d.redditUrl ? `<a class="person-item reddit-link-btn" href="${esc(d.redditUrl)}" target="_blank" rel="noopener">
+            <span class="pi-title">🔗 Reddit에서 실시간 검색 보기 (로그인 후 이용)</span></a>` : `<div class="person-fail">Reddit 링크 없음</div>`}
       </div>
       <div class="person-tone-note">강세/약세는 최근 뉴스·레딧 제목 기반 자동 추정</div>
     </div>`;
