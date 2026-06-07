@@ -120,7 +120,7 @@ function buildNav(r) {
       ${n ? `<span class="nav-count">${n}</span>` : `<span class="nav-cad">${s.cad}</span>`}</button>`;
   });
   nav.innerHTML = html;
-  $$(".nav-item", nav).forEach(b => b.onclick = () => { navigate("#/" + b.dataset.route); $("#sidebar").classList.remove("open"); });
+  $$(".nav-item", nav).forEach(b => b.onclick = () => { navigate("#/" + b.dataset.route); closeSidebar(); });
 }
 
 /* ---------- 미니 캘린더 ---------- */
@@ -212,6 +212,12 @@ function renderDashboard() {
   const recent = [...state.entries].sort((a,b)=> (b.updated||0)-(a.updated||0)).slice(0,8);
 
   $("#view").innerHTML = `
+    <div class="mkt-strip-wrap">
+      <div class="mkt-strip-head"><span class="mkt-strip-title">실시간 지수</span>
+        <button class="mkt-refresh" id="mktRefresh" title="새로고침">↻</button></div>
+      <div class="mkt-strip" id="mktStrip">${mktStripSkeleton()}</div>
+    </div>
+
     <div class="dash-hello">좋은 하루예요, Sophia 👋</div>
     <div class="dash-sub">오늘은 <b>${fullToday()}</b> · 기록이 쌓일수록 판단이 선명해집니다.</div>
     <div class="stats">
@@ -220,7 +226,15 @@ function renderDashboard() {
       <div class="stat"><div class="stat-n flame">${streak}<span style="font-size:15px">일 🔥</span></div><div class="stat-l">연속 기록</div></div>
     </div>
 
-    <div class="dash-h watch-h">이번 주 주목 종목 · 섹터 <span class="dash-h-note">주력 섹터 · 딥리서치용</span></div>
+    <div class="dash-h pf-h">관심종목 · 포트폴리오 <span class="dash-h-note">섹터별 시세 · 비중 · 매도검토</span>
+      <button class="dash-h-btn" id="btnManageTickers">＋ 종목 관리</button></div>
+    <div class="pf-panel" id="pfPanel"></div>
+
+    <div class="dash-h news-h">실시간 헤드라인 <span class="dash-h-note">Reuters · Bloomberg · 제목 클릭 시 원문</span>
+      <button class="dash-h-btn" id="btnNewsRefresh">↻ 새로고침</button></div>
+    <div class="news-panel" id="newsList"><div class="news-loading">헤드라인 불러오는 중…</div></div>
+
+    <div class="dash-h watch-h">이번 주 주목 종목 · 섹터 <span class="dash-h-note">기록에서 모은 키워드</span></div>
     <div class="watch-panel">${watchPanel}</div>
 
     <div class="dash-h">오늘의 루틴 · 매일</div>
@@ -236,6 +250,10 @@ function renderDashboard() {
   $$(".routine-card").forEach(c => c.onclick = () => openEditor(c.dataset.new, null));
   $$(".recent-row").forEach(r => r.onclick = () => openRead(r.dataset.id));
   $$(".watch-chip").forEach(c => c.onclick = () => openSearchWith(c.dataset.q));
+  $("#btnManageTickers").onclick = openTickerModal;
+  $("#mktRefresh").onclick = () => { $("#mktStrip").innerHTML = mktStripSkeleton(); MKT.quotes = {}; loadIndexStrip(); loadPortfolioQuotes(); };
+  $("#btnNewsRefresh").onclick = () => { MKT.newsAt = 0; $("#newsList").innerHTML = `<div class="news-loading">헤드라인 불러오는 중…</div>`; loadHeadlines(); };
+  mountMarkets();
 }
 function recentRow(e) {
   const s = SECTIONS[e.section];
@@ -388,6 +406,8 @@ function openEditor(section, id) {
   $("#fContent").innerHTML = working.content || "";
   $("#fThoughts").innerHTML = working.thoughts || "";
   renderChips();
+  syncTitlePreset();
+  buildTagSuggest();
   $("#saveState").textContent = isNew ? "" : "저장됨";
   $("#overlay").classList.add("show");
   $("#editor").classList.add("show");
@@ -422,7 +442,7 @@ function commit(force) {
   $("#saveState").textContent = "저장됨 ✓";
   if (!force) { clearTimeout(saveTimer); saveTimer = setTimeout(()=>{ $("#saveState").textContent="저장됨"; }, 1500); }
 }
-function scheduleSave() { $("#saveState").textContent = "저장 중…"; clearTimeout(saveTimer); saveTimer = setTimeout(()=>commit(false), 600); }
+function scheduleSave() { $("#saveState").textContent = "저장 중…"; clearTimeout(saveTimer); saveTimer = setTimeout(()=>{ commit(false); buildTagSuggest(); syncTitlePreset(); }, 600); }
 
 /* 칩 (태그 + 주목 종목·섹터) */
 function renderChips() {
@@ -452,6 +472,16 @@ const TOOLBAR = [
   {cmd:"italic", html:'<i>I</i>', t:"기울임"},
   {cmd:"underline", html:'<u>U</u>', t:"밑줄"},
   {cmd:"strikeThrough", html:'<s>S</s>', t:"취소선"},
+  {sep:true},
+  {cmd:"_size", val:"2", html:'<span style="font-size:11px">A</span>', t:"글씨 작게"},
+  {cmd:"_size", val:"3", html:'<span style="font-size:14px">A</span>', t:"글씨 보통"},
+  {cmd:"_size", val:"5", html:'<span style="font-size:18px">A</span>', t:"글씨 크게"},
+  {sep:true},
+  {cmd:"_hilite", val:"#fff3a3", html:'<span class="hl-ico" style="background:#fff3a3"></span>', t:"형광펜 · 노랑"},
+  {cmd:"_hilite", val:"#bdeec0", html:'<span class="hl-ico" style="background:#bdeec0"></span>', t:"형광펜 · 초록"},
+  {cmd:"_hilite", val:"#ffc9de", html:'<span class="hl-ico" style="background:#ffc9de"></span>', t:"형광펜 · 분홍"},
+  {cmd:"_hilite", val:"#bfe3ff", html:'<span class="hl-ico" style="background:#bfe3ff"></span>', t:"형광펜 · 파랑"},
+  {cmd:"_hiliteOff", html:'<span class="hl-ico hl-off"></span>', t:"형광펜 지우기"},
   {sep:true},
   {cmd:"insertUnorderedList", html:'•', t:"글머리"},
   {cmd:"insertOrderedList", html:'1.', t:"번호"},
@@ -483,6 +513,9 @@ function runCmd(cmd, val, ed) {
   ed.focus();
   if (cmd === "_link") { openLinkModal(ed); return; }
   if (cmd === "_code") { document.execCommand("insertHTML", false, "<code>"+ (getSel()||"코드") +"</code>"); scheduleSave(); return; }
+  if (cmd === "_size") { document.execCommand("fontSize", false, val); scheduleSave(); return; }
+  if (cmd === "_hilite") { if (!document.execCommand("hiliteColor", false, val)) document.execCommand("backColor", false, val); scheduleSave(); return; }
+  if (cmd === "_hiliteOff") { if (!document.execCommand("hiliteColor", false, "transparent")) document.execCommand("backColor", false, "transparent"); scheduleSave(); return; }
   if (cmd === "formatBlock") document.execCommand("formatBlock", false, val);
   else document.execCommand(cmd, false, null);
   scheduleSave();
@@ -594,7 +627,11 @@ function mergeStates(remote, local) {
   const entries = [...byId.values()].filter(e => !(del[e.id] && del[e.id] >= (e.updated||0)));
   const cutoff = Date.now() - 90*864e5;            // 90일 지난 묘비 정리
   Object.keys(del).forEach(id => { if (del[id] < cutoff) delete del[id]; });
-  return { entries, deleted: del };
+  // 관심종목: 더 최근에 수정된 쪽 채택 (last-write-wins)
+  const rTU = (remote&&remote.tickersUpdated)||0, lTU = local.tickersUpdated||0;
+  const tickers = (rTU > lTU) ? ((remote&&remote.tickers)||[]) : (local.tickers||[]);
+  const tickersUpdated = Math.max(rTU, lTU);
+  return { entries, deleted: del, tickers, tickersUpdated };
 }
 
 let syncing = false, syncQueued = false, syncTimer = null;
@@ -614,9 +651,11 @@ async function syncNow(showToast) {
   try {
     const { data:remote, sha } = await ghGet();
     const merged = mergeStates(remote, state);
-    const changed = JSON.stringify(state.entries) !== JSON.stringify(merged.entries);
-    state.entries = merged.entries; state.deleted = merged.deleted; save();
-    const payload = { version:1, exportedAt:new Date().toISOString(), entries:state.entries, deleted:state.deleted };
+    const changed = JSON.stringify(state.entries) !== JSON.stringify(merged.entries)
+                 || JSON.stringify(state.tickers||[]) !== JSON.stringify(merged.tickers||[]);
+    state.entries = merged.entries; state.deleted = merged.deleted;
+    state.tickers = merged.tickers; state.tickersUpdated = merged.tickersUpdated; save();
+    const payload = { version:1, exportedAt:new Date().toISOString(), entries:state.entries, deleted:state.deleted, tickers:state.tickers, tickersUpdated:state.tickersUpdated };
     sync.sha = await ghPut(payload, sha); sync.lastAt = Date.now(); saveSync();
     setSyncStatus("ok", "동기화됨 · " + hhmm());
     if (changed && !$("#editor").classList.contains("show")) render();
@@ -717,9 +756,351 @@ function toggleTheme() { state.settings.theme = (state.settings.theme==="dark") 
 let toastTimer;
 function toast(msg) { const el=$("#toast"); el.textContent=msg; el.classList.add("show"); clearTimeout(toastTimer); toastTimer=setTimeout(()=>el.classList.remove("show"),2400); }
 
+/* =========================================================
+   시장 데이터 · 포트폴리오 · 헤드라인 · 해시태그 추천 (추가 모듈)
+   - 시세: Yahoo Finance 무료 엔드포인트 (키 불필요), CORS는 무료 프록시 경유
+   - 헤드라인: Google News RSS (site:reuters / site:bloomberg) 프록시 경유
+   ========================================================= */
+
+/* 사이드바 열고/닫기 (모바일) */
+function openSidebar(){ $("#sidebar").classList.add("open"); const b=$("#sidebarBackdrop"); if(b) b.classList.add("show"); }
+function closeSidebar(){ $("#sidebar").classList.remove("open"); const b=$("#sidebarBackdrop"); if(b) b.classList.remove("show"); }
+
+/* ---------- 무료 CORS 프록시 (앞에서부터 시도, 하나 죽어도 다음으로) ---------- */
+const MKT_PROXIES = [
+  u => "https://corsproxy.io/?url=" + encodeURIComponent(u),
+  u => "https://api.allorigins.win/raw?url=" + encodeURIComponent(u),
+  u => "https://api.codetabs.com/v1/proxy/?quest=" + encodeURIComponent(u),
+  u => "https://thingproxy.freeboard.io/fetch/" + u,
+  u => u,   // 직접 (브라우저 확장 등으로 CORS 허용된 경우)
+];
+async function proxyFetch(url, asJson){
+  let lastErr;
+  for (const build of MKT_PROXIES){
+    try{
+      const res = await fetch(build(url), { cache:"no-store" });
+      if (!res.ok) { lastErr = new Error("HTTP "+res.status); continue; }
+      return asJson ? await res.json() : await res.text();
+    }catch(e){ lastErr = e; }
+  }
+  throw lastErr || new Error("network");
+}
+
+/* ---------- Yahoo Finance 시세 ---------- */
+const MKT = { quotes:{}, ttl:60000, newsCache:null, newsTtl:180000, newsAt:0 };
+async function yahooQuote(symbol, range="1d", interval="5m"){
+  const base = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?range=${range}&interval=${interval}&includePrePost=false`;
+  const j = await proxyFetch(base, true);
+  const r = j && j.chart && j.chart.result && j.chart.result[0];
+  if (!r) throw new Error("no data");
+  const m = r.meta || {};
+  let closes = ((r.indicators && r.indicators.quote && r.indicators.quote[0] && r.indicators.quote[0].close) || []).filter(x => x != null);
+  const price = (m.regularMarketPrice != null) ? m.regularMarketPrice : closes[closes.length-1];
+  const prev  = (m.chartPreviousClose != null) ? m.chartPreviousClose : (m.previousClose != null ? m.previousClose : closes[0]);
+  if (!closes.length && price != null) closes = [prev||price, price];
+  const diff = (price!=null && prev!=null) ? price - prev : 0;
+  return {
+    symbol, name: m.shortName || m.symbol || symbol,
+    price, prev, diff, pct: prev ? diff/prev*100 : 0,
+    cur: m.currency || "", spark: closes.slice(-40), t: Date.now(),
+  };
+}
+async function getQuote(symbol){
+  const c = MKT.quotes[symbol];
+  if (c && c.t && (Date.now()-c.t) < MKT.ttl && c.price != null) return c;
+  const q = await yahooQuote(symbol);
+  MKT.quotes[symbol] = q;
+  return q;
+}
+
+/* ---------- 숫자 포맷 · 스파크라인 ---------- */
+function fmtPrice(v){ if (v==null||isNaN(v)) return "—"; return Number(v).toLocaleString("en-US",{minimumFractionDigits:2, maximumFractionDigits:2}); }
+function fmtPct(v){ if (v==null||isNaN(v)) return "—"; return (v>=0?"+":"") + v.toFixed(2) + "%"; }
+function fmtDiff(v){ if (v==null||isNaN(v)) return ""; return (v>=0?"▲ ":"▼ ") + Math.abs(v).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2}); }
+function sparkSVG(data, up, w=78, h=26){
+  if (!data || data.length < 2) return "";
+  const min=Math.min(...data), max=Math.max(...data), rng=(max-min)||1;
+  const X = i => (i/(data.length-1)*w);
+  const Y = v => (h-2) - (v-min)/rng*(h-4) + 2;
+  const line = data.map((v,i)=>`${X(i).toFixed(1)},${Y(v).toFixed(1)}`).join(" ");
+  const col = up ? "var(--up)" : "var(--down)";
+  const area = `0,${h} ${line} ${w},${h}`;
+  const gid = "g"+Math.random().toString(36).slice(2,7);
+  return `<svg class="spark" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" aria-hidden="true">
+    <defs><linearGradient id="${gid}" x1="0" x2="0" y1="0" y2="1">
+      <stop offset="0" stop-color="${col}" stop-opacity=".22"/><stop offset="1" stop-color="${col}" stop-opacity="0"/>
+    </linearGradient></defs>
+    <polygon points="${area}" fill="url(#${gid})"/>
+    <polyline points="${line}" fill="none" stroke="${col}" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round"/>
+  </svg>`;
+}
+const upClass = d => d>=0 ? "up" : "down";
+
+/* ---------- 메인: 지수 스트립 (다우·나스닥·러셀·VIX) ---------- */
+const INDICES = [
+  { sym:"^DJI",  label:"DOW" },
+  { sym:"^IXIC", label:"NASDAQ" },
+  { sym:"^RUT",  label:"RUSSELL 2K" },
+  { sym:"^VIX",  label:"VIX" },
+];
+function mktStripSkeleton(){
+  return INDICES.map(ix => `<div class="mkt-cell" data-sym="${ix.sym}">
+    <div class="mkt-cell-top"><span class="mkt-label">${ix.label}</span><span class="mkt-spark"></span></div>
+    <div class="mkt-price">로딩…</div>
+    <div class="mkt-chg">—</div></div>`).join("");
+}
+async function loadIndexStrip(){
+  const strip = $("#mktStrip"); if (!strip) return;
+  await Promise.allSettled(INDICES.map(async ix => {
+    try{
+      const q = await getQuote(ix.sym);
+      const cell = strip.querySelector(`.mkt-cell[data-sym="${ix.sym}"]`); if (!cell) return;
+      const up = q.diff >= 0;
+      cell.classList.remove("up","down"); cell.classList.add(up?"up":"down");
+      cell.querySelector(".mkt-spark").innerHTML = sparkSVG(q.spark, up, 70, 22);
+      cell.querySelector(".mkt-price").textContent = fmtPrice(q.price);
+      cell.querySelector(".mkt-chg").innerHTML = `<span class="chg-pct">${fmtPct(q.pct)}</span><span class="chg-diff">${fmtDiff(q.diff)}</span>`;
+    }catch(e){
+      const cell = strip.querySelector(`.mkt-cell[data-sym="${ix.sym}"]`); if (!cell) return;
+      cell.querySelector(".mkt-price").textContent = "불러오기 실패";
+      cell.querySelector(".mkt-chg").textContent = "프록시 차단 가능";
+    }
+  }));
+}
+
+/* ---------- 메인: 관심종목 · 포트폴리오 (섹터별 + 비중 도넛 + 매도검토) ---------- */
+function pfBySector(){
+  const groups = {};
+  (state.tickers||[]).forEach(t => { const s = t.sector || "미분류"; (groups[s] = groups[s] || []).push(t); });
+  return groups;
+}
+const DONUT_COLORS = ["#3b6fb0","#c0563f","#3f8f63","#b08321","#7a5aa6","#2f8a8a","#a8772f","#5b8def","#d08b3f","#6fae8b"];
+function donutSVG(parts){ // parts: [{label, value, color}]
+  const total = parts.reduce((a,p)=>a+p.value,0);
+  if (!total) return "";
+  const R=52, C=2*Math.PI*R; let off=0;
+  const rings = parts.map(p => {
+    const frac = p.value/total, len = frac*C;
+    const seg = `<circle r="${R}" cx="70" cy="70" fill="none" stroke="${p.color}" stroke-width="20"
+      stroke-dasharray="${len.toFixed(2)} ${(C-len).toFixed(2)}" stroke-dashoffset="${(-off).toFixed(2)}"
+      transform="rotate(-90 70 70)"><title>${esc(p.label)} ${(frac*100).toFixed(1)}%</title></circle>`;
+    off += len; return seg;
+  }).join("");
+  return `<svg class="donut" viewBox="0 0 140 140">${rings}
+    <text x="70" y="66" text-anchor="middle" class="donut-c1">${parts.length}</text>
+    <text x="70" y="84" text-anchor="middle" class="donut-c2">섹터</text></svg>`;
+}
+function renderPortfolio(){
+  const panel = $("#pfPanel"); if (!panel) return;
+  const tickers = state.tickers || [];
+  if (!tickers.length){
+    panel.innerHTML = `<div class="pf-empty">등록된 종목이 없어요. <button class="link-btn" id="pfEmptyAdd">＋ 종목 등록</button>해서 메인에서 시세·섹터·비중을 관리하세요.</div>`;
+    const b=$("#pfEmptyAdd"); if(b) b.onclick=openTickerModal;
+    return;
+  }
+  const groups = pfBySector();
+  const sectorNames = Object.keys(groups).sort();
+  // 도넛: 섹터별 비중 합 (비중 입력된 것만)
+  const donutParts = sectorNames.map((s,i) => ({
+    label:s, color:DONUT_COLORS[i%DONUT_COLORS.length],
+    value: groups[s].reduce((a,t)=>a+(parseFloat(t.weight)||0),0)
+  })).filter(p=>p.value>0);
+  const totalW = donutParts.reduce((a,p)=>a+p.value,0);
+
+  const groupHtml = sectorNames.map((s,si) => {
+    const color = DONUT_COLORS[si%DONUT_COLORS.length];
+    const rows = groups[s].map(t => `
+      <div class="pf-row ${t.sell?"sell":""}" data-sym="${esc(t.ticker)}">
+        <div class="pf-id">
+          <span class="pf-tk">${esc(t.ticker)}</span>
+          ${t.name?`<span class="pf-nm">${esc(t.name)}</span>`:""}
+          ${t.sell?`<span class="pf-sellbadge">매도검토</span>`:""}
+        </div>
+        <div class="pf-spark"></div>
+        <div class="pf-quote"><span class="pf-price">…</span><span class="pf-chg">—</span></div>
+        ${(parseFloat(t.weight)||0)>0?`<div class="pf-w">${(parseFloat(t.weight)||0).toFixed(1)}%</div>`:`<div class="pf-w faint">—</div>`}
+      </div>`).join("");
+    return `<div class="pf-sector">
+      <div class="pf-sector-head"><span class="pf-sector-dot" style="background:${color}"></span>${esc(s)}<span class="pf-sector-n">${groups[s].length}</span></div>
+      ${rows}</div>`;
+  }).join("");
+
+  const legend = donutParts.length ? `<div class="donut-wrap">${donutSVG(donutParts)}
+    <div class="donut-legend">${donutParts.map(p=>`<div class="dl-row"><span class="dl-dot" style="background:${p.color}"></span><span class="dl-label">${esc(p.label)}</span><span class="dl-val">${totalW?(p.value/totalW*100).toFixed(0):0}%</span></div>`).join("")}</div></div>` : "";
+
+  panel.innerHTML = `<div class="pf-body">${legend}<div class="pf-groups">${groupHtml}</div></div>`;
+  loadPortfolioQuotes();
+}
+async function loadPortfolioQuotes(){
+  const panel = $("#pfPanel"); if (!panel) return;
+  await Promise.allSettled((state.tickers||[]).map(async t => {
+    const row = panel.querySelector(`.pf-row[data-sym="${CSS.escape(t.ticker)}"]`); if (!row) return;
+    try{
+      const q = await getQuote(t.ticker);
+      const up = q.diff >= 0;
+      row.querySelector(".pf-spark").innerHTML = sparkSVG(q.spark, up, 70, 24);
+      row.querySelector(".pf-price").textContent = fmtPrice(q.price);
+      const chg = row.querySelector(".pf-chg");
+      chg.textContent = fmtPct(q.pct); chg.className = "pf-chg " + upClass(q.diff);
+    }catch(e){
+      const p = row.querySelector(".pf-price"); if (p) p.textContent = "—";
+      const chg = row.querySelector(".pf-chg"); if (chg) chg.textContent = "실패";
+    }
+  }));
+}
+
+/* ---------- 종목 관리 모달 ---------- */
+function tickersTouched(){ state.tickersUpdated = Date.now(); }
+function openTickerModal(){
+  renderTickerRows(); refreshSectorList();
+  $("#tickerModal").classList.add("show");
+}
+function refreshSectorList(){
+  const dl = $("#sectorList"); if (!dl) return;
+  const secs = [...new Set((state.tickers||[]).map(t=>t.sector).filter(Boolean))];
+  ["반도체","AI·소프트웨어","빅테크","2차전지","바이오","금융","에너지","소비재","지수·ETF","원자재"].forEach(s=>{ if(!secs.includes(s)) secs.push(s); });
+  dl.innerHTML = secs.map(s=>`<option value="${esc(s)}"></option>`).join("");
+}
+function renderTickerRows(){
+  const box = $("#tickerRows"); if (!box) return;
+  const tickers = state.tickers || [];
+  box.innerHTML = tickers.length ? tickers.map((t,i)=>`
+    <div class="tk-row" data-i="${i}">
+      <span class="tk-c tk-c-sym">${esc(t.ticker)}</span>
+      <span class="tk-c tk-c-name">${esc(t.name||"")}</span>
+      <span class="tk-c tk-c-sector">${esc(t.sector||"미분류")}</span>
+      <span class="tk-c tk-c-weight">${(parseFloat(t.weight)||0)>0?(parseFloat(t.weight)).toFixed(1)+"%":"—"}</span>
+      <button class="tk-c tk-toggle ${t.sell?"on":""}" data-sell="${i}" title="매도검토 토글">${t.sell?"매도검토":"보유"}</button>
+      <button class="tk-del" data-del="${i}" title="삭제">✕</button>
+    </div>`).join("") : `<div class="tk-empty">아직 등록된 종목이 없습니다. 아래에서 추가하세요.</div>`;
+  $$(".tk-del", box).forEach(b=>b.onclick=()=>{ state.tickers.splice(+b.dataset.del,1); tickersTouched(); save(); if(syncOn())scheduleSync(); renderTickerRows(); refreshDashboardMarkets(); });
+  $$(".tk-toggle", box).forEach(b=>b.onclick=()=>{ const t=state.tickers[+b.dataset.sell]; t.sell=!t.sell; tickersTouched(); save(); if(syncOn())scheduleSync(); renderTickerRows(); refreshDashboardMarkets(); });
+}
+function addTicker(){
+  const sym = $("#tkSym").value.trim().toUpperCase();
+  if (!sym){ toast("티커를 입력하세요."); return; }
+  if ((state.tickers||[]).some(t=>t.ticker.toUpperCase()===sym)){ toast("이미 등록된 종목입니다."); return; }
+  state.tickers = state.tickers || [];
+  state.tickers.push({
+    id: uid(), ticker: sym,
+    name: $("#tkName").value.trim(),
+    sector: $("#tkSector").value.trim() || "미분류",
+    weight: parseFloat($("#tkWeight").value) || 0,
+    sell: $("#tkSell").checked,
+  });
+  tickersTouched(); save(); if(syncOn())scheduleSync();
+  $("#tkSym").value=""; $("#tkName").value=""; $("#tkSector").value=""; $("#tkWeight").value=""; $("#tkSell").checked=false;
+  renderTickerRows(); refreshSectorList(); refreshDashboardMarkets();
+  $("#tkSym").focus();
+}
+
+/* ---------- 메인: Reuters · Bloomberg 헤드라인 ---------- */
+const NEWS_FEEDS = [
+  { id:"reuters",   name:"Reuters",   color:"#fa6400", url:"https://news.google.com/rss/search?q=site:reuters.com%20when:2d&hl=en-US&gl=US&ceid=US:en" },
+  { id:"bloomberg", name:"Bloomberg", color:"#1a1a1a", url:"https://news.google.com/rss/search?q=site:bloomberg.com%20when:2d&hl=en-US&gl=US&ceid=US:en" },
+];
+function parseRSS(text){
+  const xml = new DOMParser().parseFromString(text, "text/xml");
+  return [...xml.querySelectorAll("item")].map(it=>({
+    title:(it.querySelector("title")?.textContent||"").trim(),
+    link:(it.querySelector("link")?.textContent||"").trim(),
+    date:it.querySelector("pubDate")?.textContent||"",
+  })).filter(x=>x.title && x.link);
+}
+function cleanTitle(t, src){ return t.replace(new RegExp("\\s*-\\s*"+src+"\\s*$","i"),"").trim(); }
+function relTime(d){
+  const t = new Date(d).getTime(); if (isNaN(t)) return "";
+  const min = Math.round((Date.now()-t)/60000);
+  if (min < 60) return min+"분 전";
+  const hr = Math.round(min/60); if (hr < 24) return hr+"시간 전";
+  return Math.round(hr/24)+"일 전";
+}
+async function loadHeadlines(){
+  const panel = $("#newsList"); if (!panel) return;
+  if (MKT.newsCache && (Date.now()-MKT.newsAt) < MKT.newsTtl){ drawHeadlines(MKT.newsCache); return; }
+  const results = await Promise.allSettled(NEWS_FEEDS.map(async f => {
+    const text = await proxyFetch(f.url, false);
+    return { feed:f, items: parseRSS(text).slice(0,7) };
+  }));
+  const data = results.map((r,i)=> r.status==="fulfilled" ? r.value : { feed:NEWS_FEEDS[i], items:[], err:true });
+  MKT.newsCache = data; MKT.newsAt = Date.now();
+  drawHeadlines(data);
+}
+function drawHeadlines(data){
+  const panel = $("#newsList"); if (!panel) return;
+  panel.innerHTML = data.map(d => `
+    <div class="news-col">
+      <div class="news-src" style="--src:${d.feed.color}"><span class="news-src-dot"></span>${d.feed.name}</div>
+      ${d.items.length ? d.items.map(it=>`
+        <a class="news-item" href="${esc(it.link)}" target="_blank" rel="noopener">
+          <span class="news-title">${esc(cleanTitle(it.title, d.feed.name))}</span>
+          <span class="news-time">${relTime(it.date)}</span>
+        </a>`).join("")
+      : `<div class="news-fail">${d.err?"불러오기 실패 (프록시 차단 가능 — 새로고침 ↻)":"표시할 기사가 없습니다."}</div>`}
+    </div>`).join("");
+}
+
+/* ---------- 대시보드에 시장 모듈 마운트 ---------- */
+function refreshDashboardMarkets(force){
+  if (parseRoute().type !== "dashboard") return;
+  if (force){ MKT.quotes = {}; MKT.newsAt = 0; }
+  loadIndexStrip();
+  renderPortfolio();
+  loadHeadlines();
+}
+function mountMarkets(){
+  loadIndexStrip();
+  renderPortfolio();
+  loadHeadlines();
+}
+
+/* ---------- 해시태그 자동 추천 ---------- */
+const SEED_TAGS = ["반도체","AI","인공지능","빅테크","금리","연준","FOMC","환율","원달러","실적","어닝","배당","관세","인플레이션","2차전지","바이오","유가","엔비디아","브로드컴","마벨","코스피","나스닥","S&P500","ETF","경기침체","고용"];
+function buildTagSuggest(){
+  const box = $("#tagSuggest"); if (!box || !working) return;
+  const text = (plainText($("#fContent").innerHTML)+" "+plainText($("#fThoughts").innerHTML)+" "+($("#fTitle").value||"")).toLowerCase();
+  if (!text.trim()){ box.innerHTML=""; return; }
+  const existing = new Set((working.tags||[]).map(t=>t.toLowerCase()));
+  const pool = new Map();
+  const used = {};
+  state.entries.forEach(e => (e.tags||[]).forEach(t => { used[t] = (used[t]||0)+1; }));
+  SEED_TAGS.forEach(t => { if (!(t in used)) used[t] = 0; });
+  Object.keys(used).forEach(t => {
+    if (existing.has(t.toLowerCase())) return;
+    if (text.includes(t.toLowerCase())) pool.set(t, (used[t]||0)+3);
+  });
+  (state.tickers||[]).forEach(tk => {
+    [tk.ticker, tk.name].filter(Boolean).forEach(label => {
+      const l = label.toLowerCase();
+      if (!existing.has(l) && text.includes(l)) pool.set(label, (pool.get(label)||0)+4);
+    });
+    if (tk.sector && tk.sector!=="미분류" && text.includes(tk.sector.toLowerCase()) && !existing.has(tk.sector.toLowerCase()))
+      pool.set(tk.sector, (pool.get(tk.sector)||0)+2);
+  });
+  ((text.toUpperCase().match(/\$[A-Z]{1,6}/g))||[]).forEach(m => { const s=m.slice(1); if(!existing.has(s.toLowerCase())) pool.set(s,(pool.get(s)||0)+3); });
+  const sorted = [...pool.entries()].sort((a,b)=> b[1]-a[1]).slice(0,10).map(x=>x[0]);
+  box.innerHTML = sorted.length
+    ? `<span class="ts-label">추천 태그</span>` + sorted.map(t=>`<button class="ts-chip" data-t="${esc(t)}">＋ #${esc(t)}</button>`).join("")
+    : "";
+  $$(".ts-chip", box).forEach(b => b.onclick = () => {
+    const v = b.dataset.t;
+    if (!working.tags.includes(v)){ working.tags.push(v); renderChips(); commit(false); }
+    buildTagSuggest();
+  });
+}
+
+/* ---------- 제목 프리셋 ---------- */
+const TITLE_PRESETS = ["빈난새의 개장전 요것만","주말브리핑 (소몽)","월가백브리핑","빈틈없이 월가","월스트리트 나우"];
+function syncTitlePreset(){
+  const sel = $("#fTitlePreset"); if (!sel) return;
+  const t = ($("#fTitle").value||"").trim();
+  sel.value = TITLE_PRESETS.includes(t) ? t : "";
+}
+
 /* ---------- 초기화 ---------- */
 function init() {
   applyTheme();
+  if (!state.tickers) state.tickers = [];
   initEditors();
   attachChipInput($("#fTagInput"), "tags");
   attachChipInput($("#fWatchInput"), "watch");
@@ -789,15 +1170,35 @@ function init() {
   };
 
   $("#btnTheme").onclick = toggleTheme;
-  $("#menuToggle").onclick = () => $("#sidebar").classList.toggle("open");
+  $("#menuToggle").onclick = () => $("#sidebar").classList.contains("open") ? closeSidebar() : openSidebar();
+  $("#sidebarClose").onclick = closeSidebar;
+  const sbBd = $("#sidebarBackdrop"); if (sbBd) sbBd.onclick = closeSidebar;
+
+  // 종목 관리 모달
+  $("#btnAddTicker").onclick = addTicker;
+  $("#btnCloseTicker").onclick = () => $("#tickerModal").classList.remove("show");
+  ["tkSym","tkName","tkSector","tkWeight"].forEach(id => {
+    const el = $("#"+id); if (el) el.addEventListener("keydown", e => { if (e.key==="Enter") addTicker(); });
+  });
+
+  // 제목 프리셋 드롭다운
+  $("#fTitlePreset").onchange = e => {
+    const v = e.target.value;
+    if (!v) return;
+    if (v === "__custom__") { $("#fTitle").value = ""; $("#fTitle").focus(); }
+    else { $("#fTitle").value = v; $("#fTitle").focus(); }
+    commit(false); buildTagSuggest();
+  };
 
   document.addEventListener("keydown", e => {
     if ((e.ctrlKey||e.metaKey) && e.key.toLowerCase()==="k") { e.preventDefault(); openSearch(); }
     if (e.key==="Escape") {
       if ($("#linkModal").classList.contains("show")) $("#linkModal").classList.remove("show");
+      else if ($("#tickerModal").classList.contains("show")) $("#tickerModal").classList.remove("show");
       else if ($("#searchModal").classList.contains("show")) $("#searchModal").classList.remove("show");
       else if ($("#backupModal").classList.contains("show")) $("#backupModal").classList.remove("show");
       else if ($("#editor").classList.contains("show")) closeEditor(false);
+      else if ($("#sidebar").classList.contains("open")) closeSidebar();
     }
   });
   $$(".modal-overlay").forEach(m => m.addEventListener("click", e => { if (e.target===m) m.classList.remove("show"); }));
@@ -807,5 +1208,8 @@ function init() {
   window.addEventListener("focus", () => { if (syncOn() && !$("#editor").classList.contains("show")) syncNow(false); });
   document.addEventListener("visibilitychange", () => { if (!document.hidden && syncOn() && !$("#editor").classList.contains("show")) syncNow(false); });
   setInterval(() => { if (syncOn() && !$("#editor").classList.contains("show") && !document.hidden) syncNow(false); }, 60000);
+
+  // 시세·헤드라인 자동 새로고침 (대시보드일 때, 60초마다)
+  setInterval(() => { if (!document.hidden && parseRoute().type==="dashboard" && !$("#editor").classList.contains("show")) { loadIndexStrip(); loadPortfolioQuotes(); loadHeadlines(); } }, 60000);
 }
 document.addEventListener("DOMContentLoaded", init);

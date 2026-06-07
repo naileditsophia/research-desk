@@ -14,6 +14,7 @@
 <div id="app">
   <!-- ===== Sidebar ===== -->
   <aside class="sidebar" id="sidebar">
+    <button class="sidebar-close" id="sidebarClose" aria-label="메뉴 닫기">✕</button>
     <div class="masthead">
       <div class="masthead-mark">RD</div>
       <div class="masthead-text">
@@ -42,6 +43,7 @@
   </aside>
 
   <button class="menu-toggle" id="menuToggle" aria-label="메뉴">☰</button>
+  <div class="sidebar-backdrop" id="sidebarBackdrop"></div>
 
   <!-- ===== Main ===== -->
   <main class="main">
@@ -75,6 +77,17 @@
         <input type="date" id="fDate" class="f-date" />
         <input type="text" id="fMeta" class="f-meta" placeholder="" />
       </div>
+      <div class="title-row">
+        <select id="fTitlePreset" class="f-preset" title="제목 형식 선택">
+          <option value="">제목 형식 선택…</option>
+          <option>빈난새의 개장전 요것만</option>
+          <option>주말브리핑 (소몽)</option>
+          <option>월가백브리핑</option>
+          <option>빈틈없이 월가</option>
+          <option>월스트리트 나우</option>
+          <option value="__custom__">직접입력</option>
+        </select>
+      </div>
       <input type="text" id="fTitle" class="f-title" placeholder="제목을 입력하세요" />
 
       <div class="block">
@@ -98,11 +111,12 @@
       </div>
 
       <div class="block">
-        <div class="block-label">태그</div>
+        <div class="block-label">태그 <span class="block-hint">아래 추천 태그를 눌러 추가할 수 있어요</span></div>
         <div class="tag-input-wrap">
           <div class="tag-chips" id="tagChips"></div>
           <input type="text" id="fTagInput" class="tag-input" placeholder="태그 입력 후 Enter (예: 반도체, 한국전력)" />
         </div>
+        <div class="tag-suggest" id="tagSuggest"></div>
       </div>
     </div>
   </section>
@@ -182,6 +196,28 @@
       <div class="modal-head"><h3>링크 삽입</h3><button class="ghost-btn" id="btnCloseLink">✕</button></div>
       <input type="text" id="linkUrl" class="search-input" placeholder="https://…" />
       <div class="modal-actions"><button class="solid-btn" id="btnApplyLink">삽입</button></div>
+    </div>
+  </div>
+
+  <!-- Ticker / portfolio management modal -->
+  <div class="modal-overlay" id="tickerModal">
+    <div class="modal modal-ticker">
+      <div class="modal-head">
+        <h3>관심종목 · 포트폴리오 관리</h3>
+        <button class="ghost-btn" id="btnCloseTicker">✕</button>
+      </div>
+      <p class="modal-desc">티커를 등록하면 메인에서 실시간 시세·전일대비 등락률·미니차트를 섹터별로 보여줍니다. 비중(%)을 넣으면 도넛 차트로 표시되고, "매도검토"를 켜면 표시됩니다. <b>시세는 Yahoo Finance(무료)에서 가져옵니다.</b></p>
+      <div class="ticker-rows" id="tickerRows"></div>
+      <div class="ticker-add">
+        <input type="text" id="tkSym"    class="tk-in tk-sym"    placeholder="티커 (예: NVDA, AVGO, ^KS11)" />
+        <input type="text" id="tkName"   class="tk-in tk-name"   placeholder="표시이름 (선택)" />
+        <input type="text" id="tkSector" class="tk-in tk-sector" placeholder="섹터 (예: 반도체)" list="sectorList" />
+        <input type="number" id="tkWeight" class="tk-in tk-weight" placeholder="비중%" min="0" max="100" step="0.1" />
+        <label class="tk-sell"><input type="checkbox" id="tkSell" /> 매도검토</label>
+        <button class="solid-btn" id="btnAddTicker">＋ 추가</button>
+      </div>
+      <datalist id="sectorList"></datalist>
+      <p class="modal-desc ticker-help">티커 형식은 Yahoo Finance 기준입니다. 미국주식은 그대로(AAPL), 한국주식은 종목코드.KS / .KQ (예: 005930.KS=삼성전자), 지수는 ^로 시작(^KS11=코스피, ^IXIC=나스닥).</p>
     </div>
   </div>
 </div>
