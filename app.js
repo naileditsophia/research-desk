@@ -215,7 +215,10 @@ function renderDashboard() {
     <div class="mkt-strip-wrap">
       <div class="mkt-strip-head"><span class="mkt-strip-title">실시간 지수</span>
         <button class="mkt-refresh" id="mktRefresh" title="새로고침">↻</button></div>
-      <div class="mkt-strip" id="mktStrip">${mktStripSkeleton()}</div>
+      <div class="mkt-strip-body">
+        <div class="mkt-strip" id="mktStrip">${mktStripSkeleton()}</div>
+        <div class="fng-widget" id="fngWidget"><div class="fng-loading">F&G 로딩…</div></div>
+      </div>
     </div>
 
     <div class="people-wrap">
@@ -257,7 +260,7 @@ function renderDashboard() {
   $$(".recent-row").forEach(r => r.onclick = () => openRead(r.dataset.id));
   $$(".watch-chip").forEach(c => c.onclick = () => openSearchWith(c.dataset.q));
   $("#btnManageTickers").onclick = openTickerModal;
-  $("#mktRefresh").onclick = () => { $("#mktStrip").innerHTML = mktStripSkeleton(); MKT.quotes = {}; loadIndexStrip(); loadPortfolioQuotes(); };
+  $("#mktRefresh").onclick = () => { $("#mktStrip").innerHTML = mktStripSkeleton(); MKT.quotes = {}; MKT.fngAt = 0; loadIndexStrip(); loadPortfolioQuotes(); loadFearGreed(); };
   const pr = $("#peopleRefresh"); if (pr) pr.onclick = () => { MKT.peopleAt = 0; $("#peopleStrip").innerHTML = peopleSkeleton(); loadPeople(); };
   $("#btnNewsRefresh").onclick = () => { MKT.newsAt = 0; $("#newsList").innerHTML = `<div class="news-loading">헤드라인 불러오는 중…</div>`; loadHeadlines(); };
   mountMarkets();
@@ -788,7 +791,10 @@ async function proxyFetch(url, asJson){
   let lastErr;
   for (const build of MKT_PROXIES){
     try{
-      const res = await fetch(build(url), { cache:"no-store" });
+      const ctrl = new AbortController();
+      const tid = setTimeout(() => ctrl.abort(), 8000);  // 프록시당 8초 타임아웃
+      const res = await fetch(build(url), { cache:"no-store", signal: ctrl.signal });
+      clearTimeout(tid);
       if (!res.ok) { lastErr = new Error("HTTP "+res.status); continue; }
       return asJson ? await res.json() : await res.text();
     }catch(e){ lastErr = e; }
@@ -797,7 +803,7 @@ async function proxyFetch(url, asJson){
 }
 
 /* ---------- Yahoo Finance 시세 ---------- */
-const MKT_VER = "20260607b"; const MKT = { quotes:{}, ttl:60000, newsCache:null, newsTtl:180000, newsAt:0, peopleCache:null, peopleAt:0 };
+const MKT_VER = "20260609a"; const MKT = { quotes:{}, ttl:60000, newsCache:null, newsTtl:180000, newsAt:0, peopleCache:null, peopleAt:0, fngCache:null, fngAt:0, fngTtl:300000 };
 async function yahooQuote(symbol, range="1d", interval="5m"){
   const base = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?range=${range}&interval=${interval}&includePrePost=false`;
   const j = await proxyFetch(base, true);
@@ -819,7 +825,7 @@ async function getQuote(symbol){
   const c = MKT.quotes[symbol];
   if (c && c.t && (Date.now()-c.t) < MKT.ttl && c.price != null) return c;
   const q = await yahooQuote(symbol);
-  MKT.quotes[symbol] = q;
+  if (q && q.price != null) MKT.quotes[symbol] = q;  // 실패한 결과는 캐시 오염 방지
   return q;
 }
 
@@ -941,6 +947,62 @@ async function fillMissingSectors(){
 }
 const SECTOR_OPTIONS = ["반도체","반도체 ETF","빅테크·기술","AI·소프트웨어","커뮤니케이션·미디어","자동차·모빌리티","금융","핀테크·크립토","헬스케어·바이오","에너지","산업재","원자재","소비재(경기)","소비재(필수)","부동산","유틸리티","지수·ETF","배당 ETF","한국주식","기타"];
 
+/* ---------- CNN Fear & Greed Index ---------- */
+const FNG_LABELS = ["Extreme Fear","Fear","Neutral","Greed","Extreme Greed"];
+const FNG_KO = { "Extreme Fear":"극단적 공포", "Fear":"공포", "Neutral":"중립", "Greed":"탐욕", "Extreme Greed":"극단적 탐욕" };
+const FNG_COLOR = { "Extreme Fear":"#e05252", "Fear":"#e07a30", "Neutral":"#b8a700", "Greed":"#5fa03a", "Extreme Greed":"#2e8b3f" };
+async function loadFearGreed(){
+  if (MKT.fngCache && (Date.now()-MKT.fngAt) < MKT.fngTtl) { drawFearGreed(MKT.fngCache); return; }
+  try{
+    const j = await proxyFetch("https://production.dataviz.cnn.io/index/fearandgreed/graphdata", true);
+    const d = j && j.fear_and_greed;
+    if (!d || d.score == null) throw new Error("no score");
+    const score = Math.round(d.score);
+    const rating = d.rating || fngRating(score);
+    MKT.fngCache = { score, rating }; MKT.fngAt = Date.now();
+    drawFearGreed({ score, rating });
+  }catch(e){
+    drawFearGreed(null);
+  }
+}
+function fngRating(score){
+  if (score <= 24) return "Extreme Fear";
+  if (score <= 44) return "Fear";
+  if (score <= 55) return "Neutral";
+  if (score <= 74) return "Greed";
+  return "Extreme Greed";
+}
+function drawFearGreed(data){
+  const el = document.getElementById("fngWidget"); if (!el) return;
+  if (!data){ el.innerHTML = '<div class="fng-err">F&G 불러오기 실패</div>'; return; }
+  const { score, rating } = data;
+  const ko = FNG_KO[rating] || rating;
+  const color = FNG_COLOR[rating] || "#aaa";
+  const isExtremeFear = rating === "Extreme Fear";
+  const pct = score;
+  const R = 44, cx = 60, cy = 58;
+  const needleAngle = Math.PI - (pct / 100) * Math.PI;
+  const nx = (cx + R * Math.cos(needleAngle)).toFixed(1);
+  const ny = (cy + R * Math.sin(needleAngle)).toFixed(1);
+  el.className = "fng-widget" + (isExtremeFear ? " fng-extreme-fear" : "");
+  el.innerHTML =
+    '<div class="fng-title">CNN Fear &amp; Greed</div>' +
+    '<div class="fng-gauge-wrap">' +
+      '<svg class="fng-svg" viewBox="0 0 120 70" xmlns="http://www.w3.org/2000/svg">' +
+        '<path d="M10,58 A50,50 0 0,1 31.7,19.3" fill="none" stroke="#e05252" stroke-width="8" stroke-linecap="butt"/>' +
+        '<path d="M31.7,19.3 A50,50 0 0,1 60,8" fill="none" stroke="#e07a30" stroke-width="8" stroke-linecap="butt"/>' +
+        '<path d="M60,8 A50,50 0 0,1 82.1,15.4" fill="none" stroke="#b8a700" stroke-width="8" stroke-linecap="butt"/>' +
+        '<path d="M82.1,15.4 A50,50 0 0,1 100,35.6" fill="none" stroke="#5fa03a" stroke-width="8" stroke-linecap="butt"/>' +
+        '<path d="M100,35.6 A50,50 0 0,1 110,58" fill="none" stroke="#2e8b3f" stroke-width="8" stroke-linecap="butt"/>' +
+        '<line x1="' + cx + '" y1="' + cy + '" x2="' + nx + '" y2="' + ny + '" stroke="' + color + '" stroke-width="2.5" stroke-linecap="round"/>' +
+        '<circle cx="' + cx + '" cy="' + cy + '" r="4" fill="' + color + '"/>' +
+        '<text x="' + cx + '" y="70" text-anchor="middle" font-size="13" font-weight="700" fill="' + color + '" font-family="monospace">' + score + '</text>' +
+      '</svg>' +
+    '</div>' +
+    '<div class="fng-label" style="color:' + color + '">' + ko + '</div>' +
+    (isExtremeFear ? '<div class="fng-alert">⚠ 극단적 공포 구간</div>' : '');
+}
+
 /* ---------- 메인: 지수 스트립 (다우·나스닥·러셀·VIX + 환율) ---------- */
 const INDICES = [
   { sym:"^DJI",  label:"DOW" },
@@ -963,7 +1025,11 @@ async function loadIndexStrip(){
       const q = await getQuote(ix.sym);
       const cell = strip.querySelector(`.mkt-cell[data-sym="${ix.sym}"]`); if (!cell) return;
       const up = q.diff >= 0;
-      cell.classList.remove("up","down"); cell.classList.add(up?"up":"down");
+      cell.classList.remove("up","down","vix-alert"); cell.classList.add(up?"up":"down");
+      // VIX 30 초과 시 반짝이는 경고 테두리
+      if (ix.sym === "^VIX" && q.price != null && q.price >= 30) {
+        cell.classList.add("vix-alert");
+      }
       cell.querySelector(".mkt-spark").innerHTML = sparkSVG(q.spark, up, 70, 22);
       cell.querySelector(".mkt-price").textContent = fmtPrice(q.price);
       cell.querySelector(".mkt-chg").innerHTML = `<span class="chg-pct">${fmtPct(q.pct)}</span><span class="chg-diff">${fmtDiff(q.diff)}</span>`;
@@ -1260,14 +1326,16 @@ function drawPeople(data){
 /* ---------- 대시보드에 시장 모듈 마운트 ---------- */
 function refreshDashboardMarkets(force){
   if (parseRoute().type !== "dashboard") return;
-  if (force){ MKT.quotes = {}; MKT.newsAt = 0; MKT.peopleAt = 0; }
+  if (force){ MKT.quotes = {}; MKT.newsAt = 0; MKT.peopleAt = 0; MKT.fngAt = 0; }
   loadIndexStrip();
+  loadFearGreed();
   renderPortfolio();
   loadHeadlines();
   loadPeople();
 }
 function mountMarkets(){
   loadIndexStrip();
+  loadFearGreed();
   loadPeople();
   renderPortfolio();
   loadHeadlines();
@@ -1432,6 +1500,6 @@ function init() {
   setInterval(() => { if (syncOn() && !$("#editor").classList.contains("show") && !document.hidden) syncNow(false); }, 60000);
 
   // 시세·헤드라인 자동 새로고침 (대시보드일 때, 60초마다)
-  setInterval(() => { if (!document.hidden && parseRoute().type==="dashboard" && !$("#editor").classList.contains("show")) { loadIndexStrip(); loadPortfolioQuotes(); loadHeadlines(); loadPeople(); } }, 60000);
+  setInterval(() => { if (!document.hidden && parseRoute().type==="dashboard" && !$("#editor").classList.contains("show")) { loadIndexStrip(); loadPortfolioQuotes(); loadHeadlines(); loadPeople(); loadFearGreed(); } }, 60000);
 }
 document.addEventListener("DOMContentLoaded", init);
