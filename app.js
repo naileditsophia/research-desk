@@ -213,11 +213,13 @@ function renderDashboard() {
 
   $("#view").innerHTML = `
     <div class="mkt-strip-wrap">
-      <div class="mkt-strip-head"><span class="mkt-strip-title">실시간 지수</span>
-        <button class="mkt-refresh" id="mktRefresh" title="새로고침">↻</button></div>
-      <div class="mkt-strip-body">
-        <div class="mkt-strip" id="mktStrip">${mktStripSkeleton()}</div>
+      <div class="mkt-top-bar">
         <div class="fng-widget" id="fngWidget"><div class="fng-loading">F&G 로딩…</div></div>
+        <div class="mkt-indices-block">
+          <div class="mkt-strip-head"><span class="mkt-strip-title">실시간 지수</span>
+            <button class="mkt-refresh" id="mktRefresh" title="새로고침">↻</button></div>
+          <div class="mkt-strip" id="mktStrip">${mktStripSkeleton()}</div>
+        </div>
       </div>
     </div>
 
@@ -229,13 +231,9 @@ function renderDashboard() {
 
     <div class="dash-hello">좋은 하루예요, Sophia 👋</div>
     <div class="dash-sub">오늘은 <b>${fullToday()}</b> · 기록이 쌓일수록 판단이 선명해집니다.</div>
-    <div class="stats">
-      <div class="stat"><div class="stat-n">${total}</div><div class="stat-l">전체 기록</div></div>
-      <div class="stat"><div class="stat-n">${weekCount}</div><div class="stat-l">이번 주 기록</div></div>
-      <div class="stat"><div class="stat-n flame">${streak}<span style="font-size:15px">일 🔥</span></div><div class="stat-l">연속 기록</div></div>
-    </div>
 
-    <div class="dash-h pf-h">관심종목 · 포트폴리오 <span class="dash-h-note">섹터별 시세 · 비중 · 매도검토</span>
+
+    <div class="dash-h pf-h">관심종목 <span class="dash-h-note">실시간 시세 · 섹터 · 비중</span>
       <button class="dash-h-btn" id="btnManageTickers">＋ 종목 관리</button></div>
     <div class="pf-panel" id="pfPanel"></div>
 
@@ -288,10 +286,11 @@ function calcStreak() {
 let listFilter = { text:"", tag:"" };
 function renderSection(key) {
   const s = SECTIONS[key];
+  const cnt = state.entries.filter(e => e.section === key).length;
   $("#topbarNum").textContent = s.num;
   $("#topbarNum").style.setProperty("--dot", `var(${s.color})`);
   $("#topbarTitle").textContent = s.label;
-  $("#topbarRight").innerHTML = `<button class="solid-btn" id="btnNew">＋ 새 기록</button>`;
+  $("#topbarRight").innerHTML = `<span class="sec-count-badge">${cnt}개</span><button class="solid-btn" id="btnNew">＋ 새 기록</button>`;
   $("#btnNew").onclick = () => openEditor(key, null);
   listFilter = { text:"", tag:"" };
   drawList(key);
@@ -1074,13 +1073,13 @@ function renderPortfolio(){
   const panel = $("#pfPanel"); if (!panel) return;
   const tickers = state.tickers || [];
   if (!tickers.length){
-    panel.innerHTML = `<div class="pf-empty">등록된 종목이 없어요. <button class="link-btn" id="pfEmptyAdd">＋ 종목 등록</button>해서 메인에서 시세·섹터·비중을 관리하세요.</div>`;
+    panel.innerHTML = '<div class="pf-empty">등록된 종목이 없어요. <button class="link-btn" id="pfEmptyAdd">＋ 종목 등록</button>해서 시세·섹터·비중을 관리하세요.</div>';
     const b=$("#pfEmptyAdd"); if(b) b.onclick=openTickerModal;
     return;
   }
+
   const groups = pfBySector();
   const sectorNames = Object.keys(groups).sort();
-  // 도넛: 섹터별 비중 합 (보유금액 기준 자동계산)
   const donutParts = sectorNames.map((s,i) => ({
     label:s, color:DONUT_COLORS[i%DONUT_COLORS.length],
     value: groups[s].reduce((a,t)=>a+(parseFloat(t.amount)||0),0)
@@ -1090,52 +1089,80 @@ function renderPortfolio(){
   const cash = (parseFloat(state.totalAssets)||0) > 0 ? Math.max(0, base - amtSum) : 0;
   const investedPct = base>0 ? amtSum/base*100 : 0;
 
-  const groupHtml = sectorNames.map((s,si) => {
-    const color = DONUT_COLORS[si%DONUT_COLORS.length];
-    const rows = groups[s].map(t => { const w = pfWeight(t); const amt = parseFloat(t.amount)||0; const saSym = encodeURIComponent(t.ticker.replace(/\.(KS|KQ)$/i,"").replace(/^\^/,"")); return `
-      <div class="pf-row ${t.sell?"sell":""}" data-sym="${esc(t.ticker)}">
-        <div class="pf-id">
-          <span class="pf-tk">${esc(t.ticker)}</span>
-          ${t.name?`<span class="pf-nm">${esc(t.name)}</span>`:""}
-          ${t.sell?`<span class="pf-sellbadge">매도검토</span>`:""}
-          <a class="pf-sa" href="https://seekingalpha.com/symbol/${saSym}" target="_blank" rel="noopener" title="Seeking Alpha에서 보기">SA↗</a>
-        </div>
-        <div class="pf-spark"></div>
-        <div class="pf-quote"><span class="pf-price">…</span><span class="pf-chg">—</span></div>
-        ${w>0?`<div class="pf-w">${w.toFixed(1)}%${amt?`<span class="pf-amt">${fmtMoney(amt)}</span>`:""}</div>`:`<div class="pf-w faint">—</div>`}
-      </div>`; }).join("");
-    return `<div class="pf-sector">
-      <div class="pf-sector-head"><span class="pf-sector-dot" style="background:${color}"></span>${esc(s)}<span class="pf-sector-n">${groups[s].length}</span></div>
-      ${rows}</div>`;
-  }).join("");
+  // 섹터 컬러 맵
+  const sectorColorMap = {};
+  sectorNames.forEach((s,i) => { sectorColorMap[s] = DONUT_COLORS[i%DONUT_COLORS.length]; });
 
-  const legend = donutParts.length ? `<div class="donut-wrap">${donutSVG(donutParts)}
-    <div class="donut-legend">${donutParts.map(p=>`<div class="dl-row"><span class="dl-dot" style="background:${p.color}"></span><span class="dl-label">${esc(p.label)}</span><span class="dl-val">${totalW?(p.value/totalW*100).toFixed(0):0}%</span></div>`).join("")}
-      ${cash>0?`<div class="dl-row dl-cash"><span class="dl-dot" style="background:#bfc4cc"></span><span class="dl-label">현금</span><span class="dl-val">${(100-investedPct).toFixed(0)}%</span></div>`:""}</div></div>` : "";
+  // 카드 그리드
+  const cardsHtml = tickers.map(t => {
+    const w = pfWeight(t);
+    const amt = parseFloat(t.amount)||0;
+    const color = sectorColorMap[t.sector||'기타'] || '#8b8fa8';
+    const saSym = encodeURIComponent(t.ticker.replace(/\.(KS|KQ)$/i,'').replace(/^\^/,''));
+    return '<div class="wl-card ' + (t.sell ? 'sell' : '') + '" data-sym="' + esc(t.ticker) + '" style="--sec-color:' + color + '">' +
+      '<div class="wl-card-header">' +
+        '<div class="wl-card-id">' +
+          '<span class="wl-ticker">' + esc(t.ticker) + '</span>' +
+          (t.name ? '<span class="wl-name">' + esc(t.name) + '</span>' : '') +
+        '</div>' +
+        '<div class="wl-card-badges">' +
+          (t.sell ? '<span class="wl-sell-badge">매도검토</span>' : '') +
+          '<span class="wl-sector-badge">' + esc(t.sector||'기타') + '</span>' +
+        '</div>' +
+      '</div>' +
+      '<div class="wl-spark"></div>' +
+      '<div class="wl-price-row">' +
+        '<span class="wl-price">…</span>' +
+        '<span class="wl-chg">—</span>' +
+      '</div>' +
+      '<div class="wl-card-footer">' +
+        (w > 0 ? '<span class="wl-weight">' + w.toFixed(1) + '%' + (amt ? ' · ' + fmtMoney(amt) : '') + '</span>' : '<span class="wl-weight faint">비중 미설정</span>') +
+        '<a class="wl-sa-link" href="https://seekingalpha.com/symbol/' + saSym + '" target="_blank" rel="noopener" title="Seeking Alpha">SA ↗</a>' +
+      '</div>' +
+    '</div>';
+  }).join('');
 
-  const summary = base>0 ? `<div class="pf-summary">
-      <span>기준자산 <b>${fmtMoney(base)}</b></span>
-      <span>투자 <b>${fmtMoney(amtSum)}</b> (${investedPct.toFixed(0)}%)</span>
-      ${cash>0?`<span>현금 <b>${fmtMoney(cash)}</b></span>`:""}
-    </div>` : "";
+  const legend = donutParts.length ? '<div class="wl-donut-wrap">' + donutSVG(donutParts) +
+    '<div class="donut-legend">' + donutParts.map(p =>
+      '<div class="dl-row"><span class="dl-dot" style="background:' + p.color + '"></span>' +
+      '<span class="dl-label">' + esc(p.label) + '</span>' +
+      '<span class="dl-val">' + (totalW ? (p.value/totalW*100).toFixed(0) : 0) + '%</span></div>'
+    ).join('') +
+    (cash>0 ? '<div class="dl-row dl-cash"><span class="dl-dot" style="background:#bfc4cc"></span><span class="dl-label">현금</span><span class="dl-val">' + (100-investedPct).toFixed(0) + '%</span></div>' : '') +
+    '</div></div>' : '';
 
-  panel.innerHTML = `${summary}<div class="pf-body">${legend}<div class="pf-groups">${groupHtml}</div></div>`;
+  const summary = base>0 ? '<div class="pf-summary">' +
+    '<span>기준자산 <b>' + fmtMoney(base) + '</b></span>' +
+    '<span>투자 <b>' + fmtMoney(amtSum) + '</b> (' + investedPct.toFixed(0) + '%)</span>' +
+    (cash>0 ? '<span>현금 <b>' + fmtMoney(cash) + '</b></span>' : '') +
+    '</div>' : '';
+
+  panel.innerHTML = summary +
+    '<div class="wl-body">' +
+      (legend ? '<div class="wl-sidebar">' + legend + '</div>' : '') +
+      '<div class="wl-grid">' + cardsHtml + '</div>' +
+    '</div>';
+
   loadPortfolioQuotes();
 }
+
 async function loadPortfolioQuotes(){
   const panel = $("#pfPanel"); if (!panel) return;
   await Promise.allSettled((state.tickers||[]).map(async t => {
-    const row = panel.querySelector(`.pf-row[data-sym="${CSS.escape(t.ticker)}"]`); if (!row) return;
+    const card = panel.querySelector(`.wl-card[data-sym="${CSS.escape(t.ticker)}"]`); if (!card) return;
     try{
       const q = await getQuote(t.ticker);
       const up = q.diff >= 0;
-      row.querySelector(".pf-spark").innerHTML = sparkSVG(q.spark, up, 70, 24);
-      row.querySelector(".pf-price").textContent = fmtPrice(q.price);
-      const chg = row.querySelector(".pf-chg");
-      chg.textContent = fmtPct(q.pct); chg.className = "pf-chg " + upClass(q.diff);
+      card.querySelector(".wl-spark").innerHTML = sparkSVG(q.spark, up, '100%', 36);
+      const price = card.querySelector(".wl-price");
+      price.textContent = fmtPrice(q.price);
+      price.className = "wl-price " + upClass(q.diff);
+      const chg = card.querySelector(".wl-chg");
+      chg.textContent = fmtPct(q.pct);
+      chg.className = "wl-chg " + upClass(q.diff);
     }catch(e){
-      const p = row.querySelector(".pf-price"); if (p) p.textContent = "—";
-      const chg = row.querySelector(".pf-chg"); if (chg) chg.textContent = "실패";
+      const price = card.querySelector(".wl-price"); if (price) price.textContent = "—";
+      const chg = card.querySelector(".wl-chg"); if (chg) chg.textContent = "실패";
     }
   }));
 }
