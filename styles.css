@@ -743,3 +743,14 @@ input { font-family:inherit; }
   .fng-gauge-wrap { width:100px; flex:none; }
   .fng-label { font-size:13px; }
 }
+
+/* ===== 자동 발행 배지 · F&G 업데이트 시각 ===== */
+.auto-tag{
+  display:inline-block; padding:1px 7px; border-radius:10px;
+  font-size:10px; font-weight:700; letter-spacing:.04em;
+  background:color-mix(in srgb, var(--gold, #b98a2f) 16%, transparent);
+  color:var(--gold, #b98a2f); border:1px solid color-mix(in srgb, var(--gold, #b98a2f) 40%, transparent);
+  vertical-align:middle; white-space:nowrap;
+}
+.fng-updated{ font-size:10px; opacity:.55; margin-top:2px; text-align:center; }
+.article-auto-note{ font-size:12px; opacity:.65; }

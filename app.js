@@ -7,14 +7,15 @@ const STORE_KEY = "researchDesk.v1";
 
 /* ---------- 섹션 정의 ---------- */
 const SECTIONS = {
-  news:     { num:"01", label:"뉴스",            cad:"매일", daily:true,  color:"--c-news",     meta:"출처 (선택)" },
-  video:    { num:"02", label:"시황 영상 요약",   cad:"매일", daily:true,  color:"--c-video",    meta:"영상 · 채널 (선택)" },
-  telegram: { num:"03", label:"텔레그램 스크리닝", cad:"매일", daily:true,  color:"--c-telegram", meta:"채널 (선택)" },
-  reading:  { num:"04", label:"독서",            cad:"주1", daily:false, color:"--c-reading",  meta:"책 · 저자 (선택)" },
-  report:   { num:"05", label:"리포트 · 종목분석", cad:"주1", daily:false, color:"--c-report",   meta:"종목 · 티커 (선택)" },
-  sector:   { num:"06", label:"섹터 딥리서치",     cad:"주1+",daily:false, color:"--c-sector",   meta:"섹터 (선택)" },
+  news:     { num:"—",  label:"뉴스",            cad:"매일", daily:true,  color:"--c-news",     meta:"출처 (선택)", hidden:true },
+  video:    { num:"01", label:"시황 영상 요약",   cad:"매일", daily:true,  color:"--c-video",    meta:"영상 · 채널 (선택)" },
+  telegram: { num:"02", label:"텔레그램 스크리닝", cad:"매일", daily:true,  color:"--c-telegram", meta:"채널 (선택)" },
+  reading:  { num:"—",  label:"독서",            cad:"주1", daily:false, color:"--c-reading",  meta:"책 · 저자 (선택)", hidden:true },
+  report:   { num:"03", label:"리포트",           cad:"주1", daily:false, color:"--c-report",   meta:"종목 · 티커 (선택)" },
+  sector:   { num:"04", label:"섹터 딥리서치",     cad:"주1+",daily:false, color:"--c-sector",   meta:"섹터 (선택)" },
 };
 const SECTION_KEYS = Object.keys(SECTIONS);
+const VISIBLE_KEYS = SECTION_KEYS.filter(k => !SECTIONS[k].hidden);   // 사이드바·대시보드에 보이는 섹션
 const DOW = ["일","월","화","수","목","금","토"];
 
 /* ---------- 상태 ---------- */
@@ -28,6 +29,26 @@ function save() {
   catch (e) { toast("저장 공간이 부족합니다. 큰 이미지는 피해주세요."); }
 }
 if (!state.deleted) state.deleted = {};   // 삭제 로그(기기 간 삭제 동기화용)
+
+/* ---------- 자동 발행 리포트 (깃헙 액션이 매일 data/auto/latest.json 생성) ---------- */
+let autoEntries = [];
+function allEntries(){ return autoEntries.length ? state.entries.concat(autoEntries) : state.entries; }
+async function loadAutoReports(){
+  try{
+    const res = await fetch("data/auto/latest.json?ts=" + Date.now(), { cache:"no-store" });
+    if (!res.ok) return;
+    const j = await res.json();
+    const posts = (j && j.posts) || [];
+    autoEntries = posts.map(p => ({
+      id: p.id, section: "report", auto: true,
+      date: p.date, title: p.title || "", meta: p.meta || "한경 컨센서스 · 자동",
+      content: p.html || "", thoughts: "",
+      tags: p.tags || [], watch: p.watch || [],
+      updated: p.updated || (new Date(p.date + "T09:00:00").getTime() || 0),
+    }));
+    if (!$("#editor").classList.contains("show")) render();
+  }catch(e){ /* 파일이 아직 없으면 조용히 무시 */ }
+}
 
 /* 동기화 설정 (토큰은 이 기기에만 저장 — 깃헙에 올라가지 않음) */
 const SYNC_KEY = "researchDesk.sync";
@@ -103,7 +124,7 @@ window.addEventListener("hashchange", render);
 function buildNav(r) {
   let activeKey = "dashboard";
   if (r.type === "section") activeKey = r.key;
-  else if (r.type === "entry") { const e = state.entries.find(x=>x.id===r.id); activeKey = e ? e.section : ""; }
+  else if (r.type === "entry") { const e = allEntries().find(x=>x.id===r.id); activeKey = e ? e.section : ""; }
   else if (r.type === "date") activeKey = "";
 
   const nav = $("#nav");
@@ -111,9 +132,9 @@ function buildNav(r) {
       <span class="nav-tick" style="background:var(--gold)"></span>
       <span class="nav-num">＊</span><span class="nav-label">오늘</span></button>
     <div class="nav-sep"></div>`;
-  SECTION_KEYS.forEach(k => {
+  VISIBLE_KEYS.forEach(k => {
     const s = SECTIONS[k];
-    const n = state.entries.filter(e => e.section === k).length;
+    const n = allEntries().filter(e => e.section === k).length;
     html += `<button class="nav-item ${activeKey===k?"active":""}" data-route="${k}" style="--dot:var(${s.color})">
       <span class="nav-tick"></span><span class="nav-num">${s.num}</span>
       <span class="nav-label">${s.label}</span>
@@ -132,7 +153,7 @@ function buildCalendar(r) {
   const days = new Date(y, m+1, 0).getDate();
   const today = todayStr();
   const selected = r.type === "date" ? r.date : null;
-  const dateSet = new Set(state.entries.map(e => e.date));
+  const dateSet = new Set(allEntries().map(e => e.date));
 
   let cells = "";
   for (let i=0;i<startDow;i++) cells += `<div class="cal-day out"></div>`;
@@ -185,8 +206,8 @@ function renderDashboard() {
   const weekCount = state.entries.filter(e => weekKey(e.date) === tWeek).length;
   const streak = calcStreak();
 
-  const dailyKeys = SECTION_KEYS.filter(k => SECTIONS[k].daily);
-  const weeklyKeys = SECTION_KEYS.filter(k => !SECTIONS[k].daily);
+  const dailyKeys = VISIBLE_KEYS.filter(k => SECTIONS[k].daily);
+  const weeklyKeys = VISIBLE_KEYS.filter(k => !SECTIONS[k].daily);
   const routineCard = (k, period) => {
     const s = SECTIONS[k];
     const done = period === "day"
@@ -209,7 +230,7 @@ function renderDashboard() {
         `<button class="watch-chip" data-q="${esc(w)}">${esc(w)}${c>1?`<span class="wc-count">${c}</span>`:""}</button>`).join("")}</div>`
     : `<div class="watch-empty">이번 주 기록에 "주목 종목·섹터"를 추가하면 여기에 모여 표시됩니다. 딥리서치할 때 참고하세요.</div>`;
 
-  const recent = [...state.entries].sort((a,b)=> (b.updated||0)-(a.updated||0)).slice(0,8);
+  const recent = [...allEntries()].sort((a,b)=> (b.updated||0)-(a.updated||0)).slice(0,8);
 
   $("#view").innerHTML = `
     <div class="mkt-strip-wrap">
@@ -237,7 +258,7 @@ function renderDashboard() {
       <button class="dash-h-btn" id="btnManageTickers">＋ 종목 관리</button></div>
     <div class="pf-panel" id="pfPanel"></div>
 
-    <div class="dash-h news-h">실시간 헤드라인 <span class="dash-h-note">매일경제 · The Economist(번역) · 클릭 시 원문</span>
+    <div class="dash-h news-h">실시간 헤드라인 <span class="dash-h-note">한국경제 경제 · The Economist(번역) · 클릭 시 원문</span>
       <button class="dash-h-btn" id="btnNewsRefresh">↻ 새로고침</button></div>
     <div class="news-panel" id="newsList"><div class="news-loading">헤드라인 불러오는 중…</div></div>
 
@@ -267,7 +288,7 @@ function recentRow(e) {
   const s = SECTIONS[e.section];
   return `<div class="recent-row" data-id="${e.id}">
     <span class="recent-dot" style="background:var(${s.color})"></span>
-    <span class="recent-sec">${s.label}</span>
+    <span class="recent-sec">${s.label}</span>${e.auto?`<span class="auto-tag">자동</span>`:""}
     <span class="recent-title">${esc(e.title) || "(제목 없음)"}</span>
     <span class="recent-date">${prettyDate(e.date)}</span></div>`;
 }
@@ -286,7 +307,7 @@ function calcStreak() {
 let listFilter = { text:"", tag:"" };
 function renderSection(key) {
   const s = SECTIONS[key];
-  const cnt = state.entries.filter(e => e.section === key).length;
+  const cnt = allEntries().filter(e => e.section === key).length;
   $("#topbarNum").textContent = s.num;
   $("#topbarNum").style.setProperty("--dot", `var(${s.color})`);
   $("#topbarTitle").textContent = s.label;
@@ -297,7 +318,7 @@ function renderSection(key) {
 }
 function drawList(key) {
   const s = SECTIONS[key];
-  let entries = state.entries.filter(e => e.section === key)
+  let entries = allEntries().filter(e => e.section === key)
     .sort((a,b)=> b.date.localeCompare(a.date) || (b.updated||0)-(a.updated||0));
   const allTags = [...new Set(entries.flatMap(e=>e.tags||[]))];
   if (listFilter.tag) entries = entries.filter(e => (e.tags||[]).includes(listFilter.tag));
@@ -332,6 +353,7 @@ function card(e, s, showSec) {
   return `<div class="entry-card" style="--dot:var(${s.color})" data-id="${e.id}">
     <div class="entry-head">
       <span class="entry-date">${prettyDate(e.date)}</span>
+      ${e.auto ? `<span class="auto-tag">자동</span>` : ""}
       ${showSec ? `<span class="entry-meta-tag">${s.label}</span>` : ""}
       ${e.meta ? `<span class="entry-meta-tag">${esc(e.meta)}</span>` : ""}
     </div>
@@ -345,7 +367,7 @@ function card(e, s, showSec) {
 
 /* === 읽기(블로그) 페이지 === */
 function renderRead(id) {
-  const e = state.entries.find(x=>x.id===id);
+  const e = allEntries().find(x=>x.id===id);
   if (!e) { location.hash = "#/dashboard"; return; }
   const s = SECTIONS[e.section];
   $("#topbarNum").textContent = s.num;
@@ -356,24 +378,25 @@ function renderRead(id) {
 
   $("#view").innerHTML = `
     <article class="article" style="--dot:var(${s.color})">
-      <div class="article-badge">${s.num} · ${s.label}</div>
+      <div class="article-badge">${s.num} · ${s.label}${e.auto?` · <span class="auto-tag">자동 발행</span>`:""}</div>
       <div class="article-date">${prettyDate(e.date)}${e.meta?` · ${esc(e.meta)}`:""}</div>
       <h1 class="article-title">${esc(e.title) || "(제목 없음)"}</h1>
       ${(e.tags&&e.tags.length)?`<div class="article-tags">${e.tags.map(t=>`<span class="entry-chip">#${esc(t)}</span>`).join("")}</div>`:""}
-      ${plainText(e.content)?`<div class="article-content">${e.content}</div>`:`<div class="article-empty">내용이 없습니다.</div>`}
+      ${plainText(e.content)?`<div class="article-content">${e.auto?sanitize(e.content):e.content}</div>`:`<div class="article-empty">내용이 없습니다.</div>`}
       ${(e.watch&&e.watch.length)?`<div class="article-box watch-box">
         <div class="box-label">◆ 주목 종목 · 섹터</div>
         <div class="watch-grid">${e.watch.map(w=>`<button class="watch-chip" data-q="${esc(w)}">${esc(w)}</button>`).join("")}</div></div>`:""}
       ${plainText(e.thoughts)?`<div class="article-box thoughts-box">
         <div class="box-label">✎ 내 생각</div><div class="box-content">${e.thoughts}</div></div>`:""}
-      <div class="article-actions">
+      ${e.auto ? `<div class="article-actions"><span class="article-auto-note">🤖 한경 컨센서스 기반 자동 발행 글입니다 (수정 불가)</span></div>`
+      : `<div class="article-actions">
         <button class="ghost-btn danger" id="btnReadDelete">삭제</button>
         <button class="solid-btn" id="btnEdit">✎ 수정</button>
-      </div>
+      </div>`}
     </article>`;
 
-  $("#btnEdit").onclick = () => openEditor(e.section, e.id);
-  $("#btnReadDelete").onclick = () => {
+  const be = $("#btnEdit"); if (be) be.onclick = () => openEditor(e.section, e.id);
+  const bd = $("#btnReadDelete"); if (bd) bd.onclick = () => {
     if (!confirm("이 기록을 삭제할까요? 되돌릴 수 없습니다.")) return;
     deleteEntry(e.id);
     navigate("#/" + e.section); toast("삭제되었습니다.");
@@ -387,7 +410,7 @@ function renderDate(ds) {
   $("#topbarNum").style.setProperty("--dot", "var(--gold)");
   $("#topbarTitle").textContent = prettyDate(ds);
   $("#topbarRight").innerHTML = "";
-  const list = state.entries.filter(e=>e.date===ds).sort((a,b)=>(b.updated||0)-(a.updated||0));
+  const list = allEntries().filter(e=>e.date===ds).sort((a,b)=>(b.updated||0)-(a.updated||0));
   $("#view").innerHTML = list.length
     ? `<div class="cards">${list.map(e=>card(e, SECTIONS[e.section], true)).join("")}</div>`
     : `<div class="empty"><div class="empty-mark">▦</div><p>${prettyDate(ds)}에 작성한 기록이 없습니다.</p></div>`;
@@ -571,7 +594,7 @@ function openSearchWith(q) { openSearch(); $("#searchInput").value = q; runSearc
 function runSearch(q) {
   q = q.trim().toLowerCase();
   if (!q) { $("#searchResults").innerHTML=""; searchHits=[]; return; }
-  searchHits = state.entries.filter(e => matchEntry(e,q)).sort((a,b)=>(b.updated||0)-(a.updated||0)).slice(0,40);
+  searchHits = allEntries().filter(e => matchEntry(e,q)).sort((a,b)=>(b.updated||0)-(a.updated||0)).slice(0,40);
   searchSel = 0; drawSearch();
 }
 function drawSearch() {
@@ -802,7 +825,7 @@ async function proxyFetch(url, asJson){
 }
 
 /* ---------- Yahoo Finance 시세 ---------- */
-const MKT_VER = "20260609a"; const MKT = { quotes:{}, ttl:60000, newsCache:null, newsTtl:180000, newsAt:0, peopleCache:null, peopleAt:0, fngCache:null, fngAt:0, fngTtl:300000 };
+const MKT_VER = "20260609a"; const MKT = { quotes:{}, ttl:60000, newsCache:null, newsTtl:180000, newsAt:0, peopleCache:null, peopleAt:0, fngCache:null, fngAt:0, fngTtl:60000 };
 async function yahooQuote(symbol, range="1d", interval="5m"){
   const base = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?range=${range}&interval=${interval}&includePrePost=false`;
   const j = await proxyFetch(base, true);
@@ -952,17 +975,34 @@ const FNG_KO = { "Extreme Fear":"극단적 공포", "Fear":"공포", "Neutral":"
 const FNG_COLOR = { "Extreme Fear":"#e05252", "Fear":"#e07a30", "Neutral":"#b8a700", "Greed":"#5fa03a", "Extreme Greed":"#2e8b3f" };
 async function loadFearGreed(){
   if (MKT.fngCache && (Date.now()-MKT.fngAt) < MKT.fngTtl) { drawFearGreed(MKT.fngCache); return; }
+  // ① CNN 실시간 (프록시 경유, 캐시 방지 파라미터 포함)
   try{
-    const j = await proxyFetch("https://production.dataviz.cnn.io/index/fearandgreed/graphdata", true);
+    const bust = Date.now();
+    const j = await proxyFetch("https://production.dataviz.cnn.io/index/fearandgreed/graphdata?_=" + bust, true);
     const d = j && j.fear_and_greed;
     if (!d || d.score == null) throw new Error("no score");
     const score = Math.round(d.score);
     const rating = d.rating || fngRating(score);
-    MKT.fngCache = { score, rating }; MKT.fngAt = Date.now();
-    drawFearGreed({ score, rating });
-  }catch(e){
-    drawFearGreed(null);
-  }
+    const asOf = d.timestamp || null;
+    MKT.fngCache = { score, rating, asOf, src:"live" }; MKT.fngAt = Date.now();
+    drawFearGreed(MKT.fngCache);
+    return;
+  }catch(e){}
+  // ② 폴백: 깃헙 액션이 30분마다 저장하는 같은 저장소의 JSON (CORS 없음)
+  try{
+    const res = await fetch("data/feargreed.json?ts=" + Date.now(), { cache:"no-store" });
+    if (res.ok){
+      const j = await res.json();
+      if (j && j.score != null){
+        const score = Math.round(j.score);
+        const rating = j.rating || fngRating(score);
+        MKT.fngCache = { score, rating, asOf: j.asOf || j.fetched, src:"repo" }; MKT.fngAt = Date.now();
+        drawFearGreed(MKT.fngCache);
+        return;
+      }
+    }
+  }catch(e){}
+  drawFearGreed(null);
 }
 function fngRating(score){
   if (score <= 24) return "Extreme Fear";
@@ -999,6 +1039,7 @@ function drawFearGreed(data){
       '</svg>' +
     '</div>' +
     '<div class="fng-label" style="color:' + color + '">' + ko + '</div>' +
+    (data.asOf ? '<div class="fng-updated">' + relTime(data.asOf) + (data.src==="repo" ? " · 백업소스" : "") + '</div>' : '') +
     (isExtremeFear ? '<div class="fng-alert">⚠ 극단적 공포 구간</div>' : '');
 }
 
@@ -1219,10 +1260,10 @@ function addTicker(){
   $("#tkSym").focus();
 }
 
-/* ---------- 메인: 매일경제 · The Economist 헤드라인 ---------- */
+/* ---------- 메인: 한국경제(경제 섹션) · The Economist 헤드라인 ---------- */
 const NEWS_FEEDS = [
-  { id:"mk", name:"매일경제", color:"#d6242b", lang:"ko",
-    url:"https://news.google.com/rss/search?q=site:mk.co.kr+(경제+OR+주식+OR+금리+OR+환율+OR+증시+OR+ETF+OR+Fed+OR+연준)+when:1d&hl=ko&gl=KR&ceid=KR:ko" },
+  { id:"hk", name:"한국경제 · 경제", color:"#1a4b8b", lang:"ko",
+    url:"https://www.hankyung.com/feed/economy" },
   { id:"economist", name:"The Economist", color:"#e3120b", lang:"en",
     url:"https://news.google.com/rss/search?q=site:economist.com%20when:7d&hl=en-US&gl=US&ceid=US:en" },
 ];
@@ -1420,6 +1461,8 @@ function init() {
   attachChipInput($("#fTagInput"), "tags");
   attachChipInput($("#fWatchInput"), "watch");
   render();
+  loadAutoReports();
+  setInterval(() => { if (!document.hidden) loadAutoReports(); }, 3600000);   // 1시간마다 자동 리포트 갱신
 
   $("#btnDone").onclick = () => closeEditor(true);
   $("#btnCloseEditor").onclick = () => closeEditor(false);
