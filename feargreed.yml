@@ -1,0 +1,44 @@
+name: CNN Fear & Greed 갱신
+
+on:
+  schedule:
+    # 미국 장중(EDT 09:00~17:00 ≒ UTC 13~21시) 평일 30분마다 + 하루 1회 오프타임 갱신
+    - cron: "*/30 13-21 * * 1-5"
+    - cron: "0 22 * * 1-5"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: feargreed
+  cancel-in-progress: true
+
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install deps
+        run: pip install requests
+
+      - name: Fetch Fear & Greed
+        run: python scripts/fetch_feargreed.py
+
+      - name: Commit & push (변경 시에만)
+        run: |
+          git config user.name "fng-bot"
+          git config user.email "actions@github.com"
+          git add data/feargreed.json
+          if git diff --cached --quiet; then
+            echo "점수 변화 없음 — 커밋 생략"
+          else
+            git commit -m "auto: F&G 갱신"
+            git pull --rebase origin ${GITHUB_REF_NAME} || true
+            git push
+          fi

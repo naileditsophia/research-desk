@@ -1,0 +1,51 @@
+name: 한경 컨센서스 데일리 리포트 자동 발행
+
+on:
+  schedule:
+    # KST 09:30(장 시작 직후 아침 리포트) / 18:00(당일치 최종본) — UTC 기준
+    - cron: "30 0 * * 1-5"
+    - cron: "0 9 * * 1-5"
+  workflow_dispatch:
+    inputs:
+      date:
+        description: "수집 날짜 (YYYY-MM-DD, 비우면 오늘)"
+        required: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: daily-reports
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install deps
+        run: pip install requests beautifulsoup4
+
+      - name: Run daily reports
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          REPORT_DATE: ${{ github.event.inputs.date }}
+        run: python scripts/daily_reports.py
+
+      - name: Commit & push
+        run: |
+          git config user.name "report-bot"
+          git config user.email "actions@github.com"
+          git add data/auto
+          if git diff --cached --quiet; then
+            echo "변경 없음 — 커밋 생략"
+          else
+            git commit -m "auto: 데일리 리포트 발행 ($(date -u +'%Y-%m-%d %H:%M UTC'))"
+            git pull --rebase origin ${GITHUB_REF_NAME} || true
+            git push
+          fi
