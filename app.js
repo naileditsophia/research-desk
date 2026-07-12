@@ -221,16 +221,6 @@ function renderDashboard() {
       <div class="routine-cta">＋ 기록하기</div></div>`;
   };
 
-  // 이번 주 주목 종목·섹터 집계
-  const watchFreq = {};
-  state.entries.filter(e => weekKey(e.date) === tWeek)
-    .forEach(e => (e.watch||[]).forEach(w => { watchFreq[w] = (watchFreq[w]||0)+1; }));
-  const watchSorted = Object.entries(watchFreq).sort((a,b)=> b[1]-a[1] || a[0].localeCompare(b[0]));
-  const watchPanel = watchSorted.length
-    ? `<div class="watch-grid">${watchSorted.map(([w,c])=>
-        `<button class="watch-chip" data-q="${esc(w)}">${esc(w)}${c>1?`<span class="wc-count">${c}</span>`:""}</button>`).join("")}</div>`
-    : `<div class="watch-empty">이번 주 기록에 "주목 종목·섹터"를 추가하면 여기에 모여 표시됩니다. 딥리서치할 때 참고하세요.</div>`;
-
   const recent = [...allEntries()].sort((a,b)=> (b.updated||0)-(a.updated||0)).slice(0,8);
 
   $("#view").innerHTML = `
@@ -246,7 +236,7 @@ function renderDashboard() {
     </div>
 
     <div class="people-wrap">
-      <div class="mkt-strip-head"><span class="mkt-strip-title">인물·인사이트 트래커 <span class="dash-h-note">야데니 · 트럼프 · 강세/약세 · 뉴스·Reddit·X</span></span>
+      <div class="mkt-strip-head"><span class="mkt-strip-title">인물·인사이트 트래커 <span class="dash-h-note">트럼프 · 강세/약세 · 뉴스·Reddit·X</span></span>
         <button class="mkt-refresh" id="peopleRefresh" title="새로고침">↻</button></div>
       <div class="people-strip" id="peopleStrip">${peopleSkeleton()}</div>
     </div>
@@ -255,16 +245,9 @@ function renderDashboard() {
     <div class="dash-sub">오늘은 <b>${fullToday()}</b> · 기록이 쌓일수록 판단이 선명해집니다.</div>
 
 
-    <div class="dash-h pf-h">관심종목 <span class="dash-h-note">실시간 시세 · 섹터 · 비중</span>
-      <button class="dash-h-btn" id="btnManageTickers">＋ 종목 관리</button></div>
-    <div class="pf-panel" id="pfPanel"></div>
-
-    <div class="dash-h news-h">실시간 헤드라인 <span class="dash-h-note">한국경제 경제 · The Economist(번역) · 클릭 시 원문</span>
+    <div class="dash-h news-h">실시간 헤드라인 <span class="dash-h-note">한국경제 경제 섹션 · 클릭 시 원문</span>
       <button class="dash-h-btn" id="btnNewsRefresh">↻ 새로고침</button></div>
     <div class="news-panel" id="newsList"><div class="news-loading">헤드라인 불러오는 중…</div></div>
-
-    <div class="dash-h watch-h">이번 주 주목 종목 · 섹터 <span class="dash-h-note">기록에서 모은 키워드</span></div>
-    <div class="watch-panel">${watchPanel}</div>
 
     <div class="dash-h">오늘의 루틴 · 매일</div>
     <div class="routine-grid">${dailyKeys.map(k=>routineCard(k,"day")).join("")}</div>
@@ -279,7 +262,6 @@ function renderDashboard() {
   $$(".routine-card").forEach(c => c.onclick = () => openEditor(c.dataset.new, null));
   $$(".recent-row").forEach(r => r.onclick = () => openRead(r.dataset.id));
   $$(".watch-chip").forEach(c => c.onclick = () => openSearchWith(c.dataset.q));
-  $("#btnManageTickers").onclick = openTickerModal;
   $("#mktRefresh").onclick = () => { $("#mktStrip").innerHTML = mktStripSkeleton(); MKT.quotes = {}; MKT.fngAt = 0; loadIndexStrip(); loadPortfolioQuotes(); loadFearGreed(); };
   const pr = $("#peopleRefresh"); if (pr) pr.onclick = () => { MKT.peopleAt = 0; $("#peopleStrip").innerHTML = peopleSkeleton(); loadPeople(); };
   $("#btnNewsRefresh").onclick = () => { MKT.newsAt = 0; $("#newsList").innerHTML = `<div class="news-loading">헤드라인 불러오는 중…</div>`; loadHeadlines(); };
@@ -1265,8 +1247,6 @@ function addTicker(){
 const NEWS_FEEDS = [
   { id:"hk", name:"한국경제 · 경제", color:"#1a4b8b", lang:"ko",
     url:"https://www.hankyung.com/feed/economy" },
-  { id:"economist", name:"The Economist", color:"#e3120b", lang:"en",
-    url:"https://news.google.com/rss/search?q=site:economist.com%20when:7d&hl=en-US&gl=US&ceid=US:en" },
 ];
 function parseRSS(text){
   const xml = new DOMParser().parseFromString(text, "text/xml");
@@ -1289,7 +1269,7 @@ async function loadHeadlines(){
   if (MKT.newsCache && (Date.now()-MKT.newsAt) < MKT.newsTtl){ drawHeadlines(MKT.newsCache); return; }
   const results = await Promise.allSettled(NEWS_FEEDS.map(async f => {
     const text = await proxyFetch(f.url, false);
-    const items = parseRSS(text).slice(0,6).map(it=>({ ...it, title: cleanTitle(it.title, f.name) }));
+    const items = parseRSS(text).slice(0,12).map(it=>({ ...it, title: cleanTitle(it.title, f.name) }));
     if (f.lang === "en") await Promise.allSettled(items.map(async it => { it.ko = await translateKo(it.title); }));
     return { feed:f, items };
   }));
@@ -1320,8 +1300,6 @@ function drawHeadlines(data){
    ⓐ 관련 뉴스(구글뉴스 RSS, 한국어 번역) ⓑ Reddit 공개 검색(JSON) ⓒ X 실시간 검색 링크
    강세/약세 배지 = 최근 뉴스·레딧 제목의 강세/약세 키워드 자동 집계(추정) */
 const PEOPLE = [
-  { id:"yardeni", name:"에드 야데니", role:"Yardeni Research", color:"#2f8a8a",
-    base:"장기 강세론", q:"\"Ed Yardeni\" market when:7d", x:"yardeni" },
   { id:"trump", name:"트럼프", role:"관세·경제 발언", color:"#c0563f",
     base:"", q:"Trump tariffs OR Trump economy OR Trump stock market when:3d", x:"realDonaldTrump" },
 ];
